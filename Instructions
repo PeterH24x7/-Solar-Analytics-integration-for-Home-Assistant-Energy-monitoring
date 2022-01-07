@@ -1,0 +1,24 @@
+SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
+
+Installation Instructions:
+
+1. Cut/past the YAML code below into the “sensor:” section of your HA configuration.yaml file.
+
+2. Edit your secrets.yaml file to include your Solar Analytics account username and password as sa_username and sa_password. For example:
+    sa_username: "fred.nerks@acme.com"
+    sa_password: "secret1"
+
+3.Validate the configuration.yaml, and then restart HA.
+
+4. On first run there won’t be any data, look in the sa_site_list attributes for your site_id.
+
+5. Substitute your site_id for the placeholder site_id (i.e. 36303) in the 2x resource URLs below.
+
+6. Again validate the configuration.yaml, and then restart HA and the data gets should now be working.
+
+7. In the HA Configuration > Energy page enter the details for
+    > Grid consumption - as sa_todays_energy_imported
+    > Return to grid - as sa_todays_energy_exported
+    > Solar production - as sa_todays_energy_generated_total
+    
+8. If all working correctly, the Energy dashboard should start populating data within a couple of hours.
