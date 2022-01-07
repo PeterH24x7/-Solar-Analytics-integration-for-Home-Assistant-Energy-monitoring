@@ -1,0 +1,145 @@
+#
+# SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
+# 
+# Developed by Peter Hormann and Glen S.
+# 7-Jan-2022
+#
+# This code is provided as-is and without any warrantee or guarantees. 
+# Further public contributions and enhancements are welcomed.
+# 
+# Installation: be added to an existing HA configuration.yaml file under a new or existing "sensor:" block. 
+#
+
+sensor:
+
+#
+# - SOLAR ANALYTICS SETUP ------------------------------------------------------
+#
+# Solar Analytics - get the site details associated with the given user account login
+# Note: site_id value is required in URLs used in the gets below - e.g. 36303
+# Updated every 24 hours
+  - platform: rest
+    name: sa_site_list
+    resource: https://portal.solaranalytics.com.au/api/v3/site_list?hardware=true&capacity=true&subscription=true
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: "{{ now() }}"
+# note: assumes only a single device per account, there could be a second device (e.g. replaced device due to fault/upgrade) at $.data.[1]
+    json_attributes_path: "$.data.[0]"
+    json_attributes:
+      - "e_status"
+      - "fault_class"
+      - "fault_id"
+      - "has_pv"
+      - "mer_status"
+      - "overall_status"
+      - "retailer_user"
+      - "s_cli_site_name"
+      - "site_id"
+      - "site_inactive"
+      - "capacity"
+      - "devices"
+      - "sub_type"
+    scan_interval: 62400
+
+# Solar Analytics - get the site status for the specified site_id
+# Updated every hour
+  - platform: rest
+    name: sa_status
+    resource: https://portal.solaranalytics.com.au/api/v3/site_status/36303
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: "{{ value_json['data']['mer_status'] }}"
+    json_attributes_path: "$.data"
+    json_attributes:
+      - "dashboard_status"
+      - "event_id"
+      - "event_list"
+      - "fault_status"
+      - "mer_percentage"
+      - "mer_status"
+      - "mer_text"
+    scan_interval: 3600
+    force_update: true
+
+  - platform: template
+    sensors:
+      sa_dashboard_status:
+        friendly_name: "Dashboard Status"
+        value_template: "{{ state_attr('sensor.sa_status', 'dashboard_status') }}"
+        entity_id: sensor.sa_status
+      sa_mer_status:
+        friendly_name: "System Status"
+        value_template: "{{ state_attr('sensor.sa_status', 'mer_status') }}"
+        entity_id: sensor.sa_status
+      sa_mer_percentage: 
+        friendly_name: "PV Performance"
+        value_template: "{{ state_attr('sensor.sa_status', 'mer_percentage') }}"
+        entity_id: sensor.sa_status
+        unit_of_measurement: "%"
+
+# Solar Analytics - get detailed 5 minute data 
+# Used to calculate today's total energy for consumed, generated, imported and exported energy for the HA Energy module
+# Updated every 5 minutes
+  - platform: rest
+    name: sa_data_by_5min
+    resource_template: 'https://portal.solaranalytics.com.au/api/v2/site_data/36303?gran=minute&tstart={{ now().strftime("%Y%m%d") }}&tend={{ now().strftime("%Y%m%d") }}'   
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: "{{ now() }}"
+    json_attributes:
+      - "data"
+    state_class: measurement
+    device_class: energy
+    scan_interval: 300
+    force_update: true
+
+  - platform: template
+    sensors:
+      sa_todays_energy_consumed_total:
+        friendly_name: Total Energy Consumed
+        unit_of_measurement: "Wh"
+        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) | sum(attribute='energy_consumed') }}"
+        icon_template: mdi:home-lightning-bolt-outline
+        device_class: "energy"
+        attribute_templates:
+          state_class: total_increasing
+      sa_todays_energy_generated_total:
+        friendly_name: Total Energy Generated
+        unit_of_measurement: "Wh"
+        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) | sum(attribute='energy_generated') }}"
+        icon_template: mdi:solar-power
+        device_class: "energy"
+        attribute_templates:
+          state_class: total_increasing
+      sa_todays_energy_imported:
+        friendly_name: Total Energy Imported
+        unit_of_measurement: "Wh"
+        value_template: >
+          {% set energy = namespace(imported=0) %}
+          {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) if sensor_data.energy_consumed > sensor_data.energy_generated %}
+            {% set energy.imported = energy.imported + sensor_data.energy_consumed - sensor_data.energy_generated %}
+          {% endfor %}
+          {{ energy.imported }}
+        icon_template: mdi:transmission-tower-export
+        device_class: "energy"
+        attribute_templates:
+          state_class: total_increasing
+      sa_todays_energy_exported:
+        friendly_name: Total Energy Exported
+        unit_of_measurement: "Wh"
+        value_template: >
+          {% set energy = namespace(exported=0) %}
+          {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) if sensor_data.energy_generated > sensor_data.energy_consumed %}
+            {% set energy.exported = energy.exported + sensor_data.energy_generated - sensor_data.energy_consumed %}
+          {% endfor %}
+          {{ energy.exported }}
+        icon_template: mdi:transmission-tower-import
+        device_class: "energy"
+        attribute_templates:
+          state_class: total_increasing
+
+# -----------------------------------------------------------------------------
