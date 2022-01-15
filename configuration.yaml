@@ -2,12 +2,15 @@
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 # 
 # Developed by Peter Hormann and Glen S.
-# 7-Jan-2022
+# Updates: 
+#     16-Jan-2022 - added power reporting (last 5 minute average).
+#
+# Created: 7-Jan-2022
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
 # 
-# Installation: be added to an existing HA configuration.yaml file under a new or existing "sensor:" block. 
+# Installation: be added to an existing HA configuration.yaml (or include) file under a new or existing "sensor:" block. 
 #
 
 sensor:
@@ -16,7 +19,7 @@ sensor:
 # - SOLAR ANALYTICS SETUP ------------------------------------------------------
 #
 # Solar Analytics - get the site details associated with the given user account login
-# Note: site_id value is required in URLs used in the gets below - e.g. 36303
+# Note: site_id value is required in URLs used in gets below - e.g. 36304
 # Updated every 24 hours
   - platform: rest
     name: sa_site_list
@@ -69,16 +72,138 @@ sensor:
       sa_dashboard_status:
         friendly_name: "Dashboard Status"
         value_template: "{{ state_attr('sensor.sa_status', 'dashboard_status') }}"
-        entity_id: sensor.sa_status
       sa_mer_status:
         friendly_name: "System Status"
         value_template: "{{ state_attr('sensor.sa_status', 'mer_status') }}"
-        entity_id: sensor.sa_status
       sa_mer_percentage: 
         friendly_name: "PV Performance"
         value_template: "{{ state_attr('sensor.sa_status', 'mer_percentage') }}"
-        entity_id: sensor.sa_status
         unit_of_measurement: "%"
+
+# Solar Analytics - get the site raw data for the specified site_id
+# Updated every 24 hours showing for 11:55pm the day before (interesting, but not very useful)
+  - platform: rest
+    name: sa_data_detail
+    resource: https://portal.solaranalytics.com.au/api/v2/site_data/36304?gran=minute&raw=true  
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: "{{ value_json['data'][0]['monitors'] }}"
+    json_attributes_path: "$.data.[0].data.[0]"
+    json_attributes:
+      - "apparentPower"
+      - "current"
+      - "energy" 
+      - "energyNeg"
+      - "energyPos"
+      - "power"
+      - "powerFactor"
+      - "reactiveEnergy"
+      - "reactivePower"
+      - "time"
+      - "voltage"
+    scan_interval: 86400
+    force_update: true
+
+  - platform: template
+    sensors:
+      sa_detail_apparent_power:
+        friendly_name: "Apparent Power"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'apparentPower') | round(1) }}"
+        unit_of_measurement: "W"
+        device_class: power
+      sa_detail_current:
+        friendly_name: "Current"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'current') | round(1) }}"
+        unit_of_measurement: "A"
+        device_class: current
+      sa_detail_energy:
+        friendly_name: "Energy"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'energy') | round(1) }}"
+        unit_of_measurement: "Wh"
+        device_class: energy
+      sa_detail_energy_neg:
+        friendly_name: "Energy Neg"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'energyNeg') | round(1) }}"
+        unit_of_measurement: "Wh"
+        device_class: energy
+      sa_detail_energy_pos:
+        friendly_name: "Energy Pos"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'energyPos') | round(1) }}"
+        unit_of_measurement: "Wh"
+        device_class: energy
+      sa_detail_power:
+        friendly_name: "Power"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'power') | round(1) }}"
+        unit_of_measurement: "W"
+        device_class: power
+      sa_detail_power_factor:
+        friendly_name: "Power Factor"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'powerFactor') | round(0) }}"
+        unit_of_measurement: "%"
+        device_class: power_factor
+      sa_detail_reactive_energy:
+        friendly_name: "Reactive Energy"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'reactiveEnergy') | round(1) }}"
+        unit_of_measurement: "Wh"
+        device_class: energy
+      sa_detail_reactive_power:
+        friendly_name: "Reactive Power"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'reactivePower') | round(1) }}"
+        unit_of_measurement: "W"
+        device_class: power
+      sa_detail_time:
+        friendly_name: "Date and Time"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'time') | int | timestamp_custom ('%d-%m-%Y %H:%M')  }}"
+      sa_detail_voltage:
+        friendly_name: "Voltage"
+        value_template: "{{ state_attr('sensor.sa_data_detail', 'voltage') | round(1) }}"
+        unit_of_measurement: "V"
+        device_class: voltage
+
+
+# Solar Analytics - get the daily data
+# Note: this data is not updated in real time - the numbers can take hours to update
+# Updated every hour
+  - platform: rest
+    name: sa_data_by_day
+    resource: https://portal.solaranalytics.com.au/api/v2/site_data/36304
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: "{{ value_json['data'][30]['t_stamp'] }}"
+    json_attributes_path: "$.data.[30]"
+    json_attributes:
+      - "energy_consumed"
+      - "energy_expected"
+      - "energy_generated" 
+      - "t_stamp"
+    state_class: measurement
+    device_class: energy
+    scan_interval: 3600
+    force_update: true
+
+  - platform: template
+    sensors:
+      sa_date:
+        friendly_name: "Date-time"
+        value_template: "{{ state_attr('sensor.sa_data_by_day', 't_stamp') }}"
+        icon_template: mdi:clock-end
+      sa_today_consumed:
+        friendly_name: "Energy Consumed"
+        value_template: "{{ state_attr('sensor.sa_data_by_day', 'energy_consumed') | round(1) }}"
+        unit_of_measurement: "Wh"
+        icon_template: mdi:home-lightning-bolt-outline
+      sa_today_expected:
+        friendly_name: "PV Generated Expected"
+        value_template: "{{ state_attr('sensor.sa_data_by_day', 'energy_expected') | round(1) }}"
+        icon_template: mdi:solar-power
+        unit_of_measurement: "Wh"
+      sa_today_generated: 
+        friendly_name: "PV Generated Actual"
+        value_template: "{{ state_attr('sensor.sa_data_by_day', 'energy_generated') | round(1) }}"
+        unit_of_measurement: "Wh"
+        icon_template: mdi:solar-power
 
 # Solar Analytics - get detailed 5 minute data 
 # Used to calculate today's total energy for consumed, generated, imported and exported energy for the HA Energy module
@@ -89,7 +214,9 @@ sensor:
     username: !secret sa_username
     password: !secret sa_password
     authentication: basic
-    value_template: "{{ now() }}"
+    value_template: >-
+      {% set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list | last %}
+        {{ most_recent_sensor_data.t_stamp }}    
     json_attributes:
       - "data"
     state_class: measurement
@@ -107,6 +234,7 @@ sensor:
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
       sa_todays_energy_generated_total:
         friendly_name: Total Energy Generated
         unit_of_measurement: "Wh"
@@ -115,6 +243,8 @@ sensor:
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+
       sa_todays_energy_imported:
         friendly_name: Total Energy Imported
         unit_of_measurement: "Wh"
@@ -128,6 +258,7 @@ sensor:
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
       sa_todays_energy_exported:
         friendly_name: Total Energy Exported
         unit_of_measurement: "Wh"
@@ -141,5 +272,41 @@ sensor:
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+
+      sa_consumption_power:
+        friendly_name: Power Consumption
+        unit_of_measurement: "W"
+        value_template: >      
+          {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) | list | last %}
+            {{ most_recent_sensor_data.energy_consumed * 12 }}
+        icon_template: mdi:home-lightning-bolt-outline
+        device_class: "power"
+        attribute_templates:
+          state_class: measurement
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+      sa_generation_power:
+        friendly_name: Power Generation
+        unit_of_measurement: "W"
+        value_template: >      
+          {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) | list | last %}
+            {{ most_recent_sensor_data.energy_generated * 12 }}
+        icon_template: mdi:transmission-tower-import
+        device_class: "power"
+        attribute_templates:
+          state_class: measurement
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+
+      sa_import_export_power:
+        friendly_name: Power Import Export
+        unit_of_measurement: "W"
+        value_template: >      
+          {{ (states.sensor.sa_consumption_power.state | int) - (states.sensor.sa_generation_power.state | int) }}
+        icon_template: mdi:transmission-tower
+        device_class: "power"
+        attribute_templates:
+          state_class: measurement
+          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
 
 # -----------------------------------------------------------------------------
+
