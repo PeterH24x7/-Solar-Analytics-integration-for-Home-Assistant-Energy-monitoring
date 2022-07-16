@@ -4,6 +4,7 @@
 # Developed by Peter Hormann and Glen S.
 # Updates: 
 #     16-Jan-2022 - added power reporting (last 5 minute average).
+#     16-Jul-2022 - enabled more accurate and more frequent power reporting 
 #
 # Created: 7-Jan-2022
 #
@@ -274,28 +275,85 @@ sensor:
           state_class: total_increasing
           time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
 
+# 16-Jul-22 - this commented code block is now redundant (replaced by get live per minute power data code below) and can be deleted.
+#       sa_consumption_power:
+#         friendly_name: Power Consumption
+#         unit_of_measurement: "W"
+#         value_template: >      
+#           {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) | list | last %}
+#             {{ most_recent_sensor_data.energy_consumed * 12 }}
+#         icon_template: mdi:home-lightning-bolt-outline
+#         device_class: "power"
+#         attribute_templates:
+#           state_class: measurement
+#           time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+#       sa_generation_power:
+#         friendly_name: Power Generation
+#         unit_of_measurement: "W"
+#         value_template: >      
+#           {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) | list | last %}
+#             {{ most_recent_sensor_data.energy_generated * 12 }}
+#         icon_template: mdi:transmission-tower-import
+#         device_class: "power"
+#         attribute_templates:
+#           state_class: measurement
+#           time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+# 
+#       sa_import_export_power:
+#         friendly_name: Power Import Export
+#         unit_of_measurement: "W"
+#         value_template: >      
+#           {{ (states.sensor.sa_consumption_power.state | int) - (states.sensor.sa_generation_power.state | int) }}
+#         icon_template: mdi:transmission-tower
+#         device_class: "power"
+#         attribute_templates:
+#           state_class: measurement
+#           time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+
+# Solar Analytics - get live per minute power data - added 9-Jul-22.
+# Used to generate most recent power information.
+# Updated every 60 seconds.
+# Note: this is not a published API 'get', but is used by the SA portal to display minute to minute power for a site.
+  - platform: rest
+    name: sa_live_site_data
+    resource_template: 'https://portal.solaranalytics.com.au/api/v3/live_site_data?site_id=36303&last_six=true'   
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: >-
+      {% set most_recent_sensor_data = value_json['data'] | list | last %}
+        {{ as_timestamp(most_recent_sensor_data.t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S')}}    
+    json_attributes:
+      - "data"
+    state_class: measurement
+    device_class: power
+    scan_interval: 60
+    force_update: true
+
+  - platform: template
+    sensors:          
       sa_consumption_power:
         friendly_name: Power Consumption
         unit_of_measurement: "W"
-        value_template: >      
-          {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) | list | last %}
-            {{ most_recent_sensor_data.energy_consumed * 12 }}
+        value_template: >
+          {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
+            {{ most_recent_sensor_data.consumed | int }}
         icon_template: mdi:home-lightning-bolt-outline
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
       sa_generation_power:
         friendly_name: Power Generation
         unit_of_measurement: "W"
         value_template: >      
-          {% set most_recent_sensor_data = states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) | list | last %}
-            {{ most_recent_sensor_data.energy_generated * 12 }}
+          {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
+            {{ most_recent_sensor_data.generated | int }}
         icon_template: mdi:transmission-tower-import
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
 
       sa_import_export_power:
         friendly_name: Power Import Export
@@ -306,7 +364,7 @@ sensor:
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
 
 # -----------------------------------------------------------------------------
 
