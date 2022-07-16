@@ -4,15 +4,19 @@ Installation Instructions:
 
 1. Cut/past the YAML code below into the “sensor:” section of your HA configuration.yaml file.
 
-2. Edit your secrets.yaml file to include your Solar Analytics account username and password as sa_username and sa_password. For example:
+2. Edit your secrets.yaml file to include your Solar Analytics account username and password as sa_username and sa_password. 
+  You will also add a site_id which is available from your Solar Analytics account portal - looking something like "36305". 
+
+  For example:
     sa_username: "fred.nerks@acme.com"
     sa_password: "secret1"
+    sa_site_id:  "12345"
 
-3.Validate the configuration.yaml, and then restart HA.
+3. Validate the configuration.yaml, and then restart HA.
 
-4. On first run there won’t be any data, look in the sa_site_list attributes for your site_id.
+4. On first run there won’t be any data if you haven't configured a site id - look in the sa_site_list attributes for your site_id.
 
-5. Substitute your site_id for the placeholder site_id (i.e. 36303) in the 2x resource URLs below.
+5. Add your sa_site_id (replace for 12345 above) in the secrets.yaml file.
 
 6. Again validate the configuration.yaml, and then restart HA and the data gets should now be working.
 
