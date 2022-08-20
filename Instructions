@@ -1,28 +1,28 @@
 SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 
 Installation Instructions:
-
-1. Cut/past the YAML code below into the “sensor:” section of your HA configuration.yaml file.
-
-2. Edit your secrets.yaml file to include your Solar Analytics account username and password as sa_username and sa_password. 
-  You will also add a site_id which is available from your Solar Analytics account portal - looking something like "36305". 
-
-  For example:
-    sa_username: "fred.nerks@acme.com"
-    sa_password: "secret1"
-    sa_site_id:  "12345"
-
-3. Validate the configuration.yaml, and then restart HA.
-
-4. On first run there won’t be any data if you haven't configured a site id - look in the sa_site_list attributes for your site_id.
-
-5. Add your sa_site_id (replace for 12345 above) in the secrets.yaml file.
-
-6. Again validate the configuration.yaml, and then restart HA and the data gets should now be working.
-
-7. In the HA Configuration > Energy page enter the details for
-    > Grid consumption - as sa_todays_energy_imported
-    > Return to grid - as sa_todays_energy_exported
-    > Solar production - as sa_todays_energy_generated_total
-    
-8. If all working correctly, the Energy dashboard should start populating data within a couple of hours.
+#
+#   1. Copy the solar_analytics.yaml file to the HA config directory.
+#
+#   2. Include this file name as a package in the HA configuration.yaml. 
+#      For example -
+#        packages:
+#          pack_1: !include solar_analytics.yaml
+#
+#   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file.
+#
+#   4. After first run, review the attributes sa_data_by_5min to identify the 
+#      device specific channel names and update the sa_todays_... xyz sensor to suit.
+#
+#   6. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
+#      Individual Devices". Go to HA settings and then search for “Energy Configuration” 
+#      to make the changes.
+#
+#   7. Also in HA Energy Configuration, enter the details for
+#      > Grid consumption - as sa_todays_energy_imported
+#      > Return to grid - as sa_todays_energy_exported
+#      > Solar production - as sa_todays_energy_generated_total
+#
+#   8. If all working is correctly, the Energy dashboard should start populating data within 
+#      a couple of hours.
+#
