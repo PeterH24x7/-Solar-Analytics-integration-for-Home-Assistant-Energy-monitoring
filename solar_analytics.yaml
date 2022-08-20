@@ -11,6 +11,9 @@
 #     16-Jul-2022 - enabled more accurate and more frequent 1 minute power reporting
 #                 - added 5 minute energy updates for all channels
 #                 - moved sa_site_id to secrets.yaml.
+#     11-Aug-2022 - added some error checking to deal with daily energy total errors when the data get is 'unavailable' or 'unknown'
+#                 - removed "force_update: true" - where the data get may be 'unavailable'
+#                 - removed "state_class: measurement" and "device_class: energy" for rest platform sensors (not applicable)
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -21,7 +24,7 @@
 #      For example -
 #        packages:
 #          pack_1: !include solar_analytics.yaml
-#   3. Define sa_username, sa_password and sa_site_id in the secrets.yaml file.
+#   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file.
 #   4. After first run, review the attributes sa_data_by_5min to identify the 
 #      device specific channel names and update the sa_todays_... xyz sensor to suit.
 #   6. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
@@ -39,6 +42,7 @@
 #
 # -----------------------------------------------------------------------------
 
+
 #
 # Define the Solar Analytics site_id value is required in URLs used in gets below - e.g. 36304. 
 #   See the Solar Analytics user portal to find your site id or see the collected sa_site_list attributes as defined below.
@@ -54,6 +58,8 @@ sensor:
 # Solar Analytics - get the site details associated with the given user account login.
 # Updated every 24 hours.
 #
+# note: assumes only a single device per account, there could be a second device (e.g. replaced device due to fault/upgrade) at $.data.[1]
+#
   - platform: rest
     name: sa_site_list
     resource: https://portal.solaranalytics.com.au/api/v3/site_list?hardware=true&capacity=true&subscription=true
@@ -61,12 +67,11 @@ sensor:
     password: !secret sa_password
     authentication: basic
     value_template: "{{ now() }}"
-# note: assumes only a single device per account, there could be a second device (e.g. replaced device due to fault/upgrade) at $.data.[1]
     json_attributes_path: "$.data.[0]"
     json_attributes:
       - "e_status"
       - "fault_class"
-      - "fault_id"
+      - "fault_id*"
       - "has_pv"
       - "mer_status"
       - "overall_status"
@@ -100,7 +105,6 @@ sensor:
       - "mer_status"
       - "mer_text"
     scan_interval: 3600
-    force_update: true
 
   - platform: template
     sensors:
@@ -136,102 +140,177 @@ sensor:
         {{ most_recent_sensor_data.t_stamp }}    
     json_attributes:
       - "data"
-    state_class: measurement
-    device_class: energy
     scan_interval: 300
-    force_update: true
 
   - platform: template
     sensors:
       sa_todays_energy_consumed_total:
         friendly_name: Total Energy Consumed
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) | sum(attribute='energy_consumed') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'energy_consumed', 'equalto', None ) | sum( attribute='energy_consumed' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_energy_consumed_total' ) }}
+          {% endif %}
         icon_template: mdi:home-lightning-bolt-outline
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_energy_consumed_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_energy_generated_total:
         friendly_name: Total Energy Generated
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) | sum(attribute='energy_generated') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'energy_generated', 'equalto', None ) | sum( attribute='energy_generated' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_energy_generated_total' ) }}
+          {% endif %}
         icon_template: mdi:solar-power
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_energy_generated_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_air_conditioner_total:
         friendly_name: Heating Cooling Energy
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('load_air_conditioner', 'equalto', None) | sum(attribute='load_air_conditioner') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'load_air_conditioner', 'equalto', None ) | sum( attribute='load_air_conditioner' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_air_conditioner_total' ) }}
+          {% endif %}
         icon_template: mdi:hvac
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_air_conditioner_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_electric_vehicle_total:
         friendly_name: Electric Vehicle Energy
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('load_ev_charger', 'equalto', None) | sum(attribute='load_ev_charger') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'load_ev_charger', 'equalto', None ) | sum( attribute='load_ev_charger' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_electric_vehicle_total' ) }}
+          {% endif %}
         icon_template: mdi:car-electric
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_electric_vehicle_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_hot_water_total:
         friendly_name: Hot Water Energy
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('load_hot_water', 'equalto', None) | sum(attribute='load_hot_water') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'load_hot_water', 'equalto', None ) | sum( attribute='load_hot_water' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_hot_water_total' ) }}
+          {% endif %}
         icon_template: mdi:shower-head
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_hot_water_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_stove_oven_total:
         friendly_name: Stove Oven Energy
         unit_of_measurement: "Wh"
-        value_template: "{{ states.sensor.sa_data_by_5min.attributes.data | rejectattr('load_stove', 'equalto', None) | sum(attribute='load_stove') | int }}"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_5min.attributes.data | rejectattr( 'load_stove', 'equalto', None ) | sum( attribute='load_stove' ) | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_stove_oven_total' ) }}
+          {% endif %}
         icon_template: mdi:stove
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_stove_oven_total.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_energy_imported:
         friendly_name: Total Energy Imported
         unit_of_measurement: "Wh"
         value_template: >
-          {% set energy = namespace(imported=0) %}
-          {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) if sensor_data.energy_consumed > sensor_data.energy_generated %}
-            {% set energy.imported = energy.imported + sensor_data.energy_consumed - sensor_data.energy_generated %}
-          {% endfor %}
-          {{ energy.imported | int }}
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {% set energy = namespace( imported = 0 ) %}
+            {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_consumed', 'equalto', None) if sensor_data.energy_consumed > sensor_data.energy_generated %}
+              {% set energy.imported = energy.imported + sensor_data.energy_consumed - sensor_data.energy_generated %}
+            {% endfor %}
+            {{ energy.imported | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_energy_imported' ) }}
+          {% endif %}
         icon_template: mdi:transmission-tower-export
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_energy_imported.time_stamp" ) }}
+            {% endif %}
 
       sa_todays_energy_exported:
         friendly_name: Total Energy Exported
         unit_of_measurement: "Wh"
         value_template: >
-          {% set energy = namespace(exported=0) %}
-          {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) if sensor_data.energy_generated > sensor_data.energy_consumed %}
-            {% set energy.exported = energy.exported + sensor_data.energy_generated - sensor_data.energy_consumed %}
-          {% endfor %}
-          {{ energy.exported | int }}
+          {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+            {% set energy = namespace( exported = 0 ) %}
+            {% for sensor_data in states.sensor.sa_data_by_5min.attributes.data | rejectattr('energy_generated', 'equalto', None) if sensor_data.energy_generated > sensor_data.energy_consumed %}
+              {% set energy.exported = energy.exported + sensor_data.energy_generated - sensor_data.energy_consumed %}
+            {% endfor %}
+            {{ energy.exported | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_energy_exported' ) }}
+          {% endif %}
         icon_template: mdi:transmission-tower-import
         device_class: "energy"
         attribute_templates:
           state_class: total_increasing
-          time_stamp: "{{ states.sensor.sa_data_by_5min.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_5min.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_energy_exported.time_stamp" ) }}
+            {% endif %}
 
 #
 # Solar Analytics - get live per minute power data - added 9-Jul-22.
@@ -250,10 +329,7 @@ sensor:
         {{ as_timestamp(most_recent_sensor_data.t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S')}}    
     json_attributes:
       - "data"
-    state_class: measurement
-    device_class: power
     scan_interval: 60
-    force_update: true
 
   - platform: template
     sensors:          
@@ -261,35 +337,62 @@ sensor:
         friendly_name: Power Consumption
         unit_of_measurement: "W"
         value_template: >
-          {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
-            {{ most_recent_sensor_data.consumed | int }}
+          {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+            {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
+              {{ most_recent_sensor_data.consumed | int }}
+          {% else %}
+            {{ states( 'sensor.sa_consumption_power' ) }}
+          {% endif %}
         icon_template: mdi:home-lightning-bolt-outline
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_live_site_data.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_consumption_power.time_stamp" ) }}
+            {% endif %}
 
       sa_generation_power:
         friendly_name: Power Generation
         unit_of_measurement: "W"
-        value_template: >      
-          {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
-            {{ most_recent_sensor_data.generated | int }}
+        value_template: >
+          {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+            {% set most_recent_sensor_data = states.sensor.sa_live_site_data.attributes.data | list | last %}
+              {{ most_recent_sensor_data.generated | int }}
+          {% else %}
+            {{ states( 'sensor.sa_generation_power' ) }}
+          {% endif %}
         icon_template: mdi:transmission-tower-import
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_live_site_data.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_generation_power.time_stamp" ) }}
+            {% endif %}
 
       sa_import_export_power:
         friendly_name: Power Import Export
         unit_of_measurement: "W"
-        value_template: >      
-          {{ (states.sensor.sa_consumption_power.state | int) - (states.sensor.sa_generation_power.state | int) }}
+        value_template: >
+          {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+            {{ (states.sensor.sa_consumption_power.state | int) - (states.sensor.sa_generation_power.state | int) }}
+          {% else %}
+            {{ states( 'sensor.sa_import_export_power' ) }}
+          {% endif %}
         icon_template: mdi:transmission-tower
         device_class: "power"
         attribute_templates:
           state_class: measurement
-          time_stamp: "{{ states.sensor.sa_live_site_data.state }}"
+          time_stamp: >
+            {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_live_site_data.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_import_export_power.time_stamp" ) }}
+            {% endif %}
 
 # -----------------------------------------------------------------------------
