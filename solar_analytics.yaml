@@ -119,6 +119,31 @@ sensor:
         value_template: "{{ state_attr('sensor.sa_status', 'mer_percentage') }}"
         unit_of_measurement: "%"
 
+## Convert Solar Analytics - Total Energy Consumed (Today) from Wh to kWh
+      sa_todays_energy_consumed_total_kwh:
+        friendly_name: 'Total Energy Consumed - kWh'
+        unit_of_measurement: 'kWh'
+        value_template: "{{ states('sensor.sa_todays_energy_consumed_total') | float / 1000 }}"
+        icon_template: mdi:solar-power
+## Convert Solar Analytics - Total Energy Exported (Today) from Wh to kWh
+      sa_todays_energy_exported_kwh:
+        friendly_name: 'Total Energy Exported - kWh'
+        unit_of_measurement: 'kWh'
+        value_template: "{{ states('sensor.sa_todays_energy_exported') | float / 1000 }}"
+        icon_template: mdi:solar-power
+## Convert Solar Analytics - Total Energy Generated (Today) from Wh to kWh
+      sa_todays_energy_generated_total_kwh:
+        friendly_name: 'Total Energy Generated - kWh'
+        unit_of_measurement: 'kWh'
+        value_template: "{{ states('sensor.sa_todays_energy_generated_total') | float / 1000 }}"
+        icon_template: mdi:solar-power
+## Convert Solar Analytics - Total Energy Imported (Today) from Wh to kWh
+      sa_todays_energy_imported_kwh:
+        friendly_name: 'Total Energy Imported - kWh'
+        unit_of_measurement: 'kWh'
+        value_template: "{{ states('sensor.sa_todays_energy_imported') | float / 1000 }}"
+        icon_template: mdi:solar-power
+
 #
 # Solar Analytics - get 5 minute energy data.
 # Used to calculate today's cumulative total energy for consumed, generated, imported and exported energy as used by the HA Energy module.
