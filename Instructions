@@ -1,28 +1,29 @@
 SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 
 Installation Instructions:
-#
-#   1. Copy the solar_analytics.yaml file to the HA config directory.
-#
+
+#   1. Copy this yaml file to the HA config directory.
 #   2. Include this file name as a package in the HA configuration.yaml. 
 #      For example -
 #        packages:
 #          pack_1: !include solar_analytics.yaml
-#
 #   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file.
-#
-#   4. After first run, review the attributes sa_data_by_5min to identify the 
-#      device specific channel names and update the sa_todays_... xyz sensor to suit.
-#
+#   4. Using developer tools check configuration and restart.  From States, review the 
+#      attributes for sa_data_by_5min to identify the device specific channel names and 
+#      update/delete the sa_todays_... xyz sensors to suit.
 #   6. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
 #      Individual Devices". Go to HA settings and then search for “Energy Configuration” 
 #      to make the changes.
-#
 #   7. Also in HA Energy Configuration, enter the details for
 #      > Grid consumption - as sa_todays_energy_imported
 #      > Return to grid - as sa_todays_energy_exported
 #      > Solar production - as sa_todays_energy_generated_total
-#
 #   8. If all working is correctly, the Energy dashboard should start populating data within 
 #      a couple of hours.
-#
+#   9. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
+#      details, then the net cost, import rate and export rate should work without further
+#      config. Else delete these sensors.
+#   10.Enjoy!
+
+If you find my work useful, please buy me a coffee ... thank you!
+   https://www.buymeacoffee.com/peter24x7
