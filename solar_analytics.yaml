@@ -2,9 +2,11 @@
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 # 
-# Developed by Peter Hormann and with thanks to Glen S.
+# Developed by Peter Hormann and with thanks to Glen S and Roving-Ronin for their contributions.
 #
 # Created: 7-Jan-2022
+#
+# Last updated: 10-Feb-2023
 #
 # Updates: 
 #     16-Jan-2022 - added power reporting (last 5 minute average).
@@ -14,6 +16,11 @@
 #     11-Aug-2022 - added some error checking to deal with daily energy total errors when the data get is 'unavailable' or 'unknown'
 #                 - removed "force_update: true" - where the data get may be 'unavailable'
 #                 - removed "state_class: measurement" and "device_class: energy" for rest platform sensors (not applicable)
+#     10-Feb-2023 - added "unique_id" to each sensor entity (including existing) to enable HA Lovelace based settings changes.
+#                 - added new "Total Energy Generated Expected" sensor to provide daily cumulative expected energy (as per the Solar Analytics portal).
+#                 - added kW sensors as conversions of their respective W conterpart (note: not required for energy entities as of HA 2023.2).
+#                 - where HA EM is used for cost calculations added "Todays Energy Total Net Cost" (import cost minus feed-in revenue).
+#                 - for those on variable energy rates (e.g. Amber) created new sensors "Todays Energy Import Rate" and "Todays Energy Export Rate".
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -25,8 +32,9 @@
 #        packages:
 #          pack_1: !include solar_analytics.yaml
 #   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file.
-#   4. After first run, review the attributes sa_data_by_5min to identify the 
-#      device specific channel names and update the sa_todays_... xyz sensor to suit.
+#   4. Using developer tools check configuration and restart.  From States, review the 
+#      attributes for sa_data_by_5min to identify the device specific channel names and 
+#      update/delete the sa_todays_... xyz sensors to suit.
 #   6. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
 #      Individual Devices". Go to HA settings and then search for “Energy Configuration” 
 #      to make the changes.
@@ -36,6 +44,13 @@
 #      > Solar production - as sa_todays_energy_generated_total
 #   8. If all working is correctly, the Energy dashboard should start populating data within 
 #      a couple of hours.
+#   9. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
+#      details, then the net cost, import rate and export rate should work without further
+#      config. Else delete these sensors.
+#   10.Enjoy!
+#
+# If you find my work useful, please buy me a coffee ... thank you!
+#   https://www.buymeacoffee.com/peter24x7
 #
 # Reference for more information and updates:
 #   https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring
@@ -54,6 +69,7 @@ input_text:
 
 sensor:
 
+# -----------------------------------------------------------------------------
 #  
 # Solar Analytics - get the site details associated with the given user account login.
 # Updated every 24 hours.
@@ -84,6 +100,7 @@ sensor:
       - "sub_type"
     scan_interval: 62400
 
+# -----------------------------------------------------------------------------
 #
 # Solar Analytics - get the site status for the specified site_id.
 # Updated every hour.
@@ -110,15 +127,19 @@ sensor:
     sensors:
       sa_dashboard_status:
         friendly_name: "Dashboard Status"
+        unique_id: sa_dashboard_status
         value_template: "{{ state_attr('sensor.sa_status', 'dashboard_status') }}"
       sa_mer_status:
         friendly_name: "System Status"
+        unique_id: sa_mer_status
         value_template: "{{ state_attr('sensor.sa_status', 'mer_status') }}"
       sa_mer_percentage: 
         friendly_name: "PV Performance"
+        unique_id: sa_mer_percentage
         value_template: "{{ state_attr('sensor.sa_status', 'mer_percentage') }}"
         unit_of_measurement: "%"
 
+# -----------------------------------------------------------------------------
 #
 # Solar Analytics - get 5 minute energy data.
 # Used to calculate today's cumulative total energy for consumed, generated, imported and exported energy as used by the HA Energy module.
@@ -146,6 +167,7 @@ sensor:
     sensors:
       sa_todays_energy_consumed_total:
         friendly_name: Total Energy Consumed
+        unique_id: sa_todays_energy_consumed_total        
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -166,6 +188,7 @@ sensor:
 
       sa_todays_energy_generated_total:
         friendly_name: Total Energy Generated
+        unique_id: sa_todays_energy_generated_total
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -186,6 +209,7 @@ sensor:
 
       sa_todays_air_conditioner_total:
         friendly_name: Heating Cooling Energy
+        unique_id: sa_todays_air_conditioner_total
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -206,6 +230,7 @@ sensor:
 
       sa_todays_electric_vehicle_total:
         friendly_name: Electric Vehicle Energy
+        unique_id: sa_todays_electric_vehicle_total
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -226,6 +251,7 @@ sensor:
 
       sa_todays_hot_water_total:
         friendly_name: Hot Water Energy
+        unique_id: sa_todays_hot_water_total
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -246,6 +272,7 @@ sensor:
 
       sa_todays_stove_oven_total:
         friendly_name: Stove Oven Energy
+        unique_id: sa_todays_stove_oven_total
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -266,6 +293,7 @@ sensor:
 
       sa_todays_energy_imported:
         friendly_name: Total Energy Imported
+        unique_id: sa_todays_energy_imported
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -290,6 +318,7 @@ sensor:
 
       sa_todays_energy_exported:
         friendly_name: Total Energy Exported
+        unique_id: sa_todays_energy_exported
         unit_of_measurement: "Wh"
         value_template: >
           {% if states( 'sensor.sa_data_by_5min' ) not in ("unavailable", "unknown") %}
@@ -312,10 +341,11 @@ sensor:
               {{ state_attr( "sensor.sa_todays_energy_exported.time_stamp" ) }}
             {% endif %}
 
+# -----------------------------------------------------------------------------
 #
 # Solar Analytics - get live per minute power data - added 9-Jul-22.
 # Used to generate most recent power information.
-# Updated every 60 seconds.
+# Updated every 30 seconds (changed 24-Oct-22 to improve power management responsiveness).
 # Note: this is not a published API 'get', but is used by the SA portal to display minute to minute power for a site.
 #
   - platform: rest
@@ -326,15 +356,16 @@ sensor:
     authentication: basic
     value_template: >-
       {% set most_recent_sensor_data = value_json['data'] | list | last %}
-        {{ as_timestamp(most_recent_sensor_data.t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S')}}    
+        {{ as_timestamp(most_recent_sensor_data.t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S')}}
     json_attributes:
       - "data"
-    scan_interval: 60
+    scan_interval: 30
 
   - platform: template
     sensors:          
       sa_consumption_power:
         friendly_name: Power Consumption
+        unique_id: sa_consumption_power
         unit_of_measurement: "W"
         value_template: >
           {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
@@ -356,6 +387,7 @@ sensor:
 
       sa_generation_power:
         friendly_name: Power Generation
+        unique_id: sa_generation_power
         unit_of_measurement: "W"
         value_template: >
           {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
@@ -364,7 +396,7 @@ sensor:
           {% else %}
             {{ states( 'sensor.sa_generation_power' ) }}
           {% endif %}
-        icon_template: mdi:transmission-tower-import
+        icon_template: mdi:solar-power
         device_class: "power"
         attribute_templates:
           state_class: measurement
@@ -377,6 +409,7 @@ sensor:
 
       sa_import_export_power:
         friendly_name: Power Import Export
+        unique_id: sa_import_export_power
         unit_of_measurement: "W"
         value_template: >
           {% if states( 'sensor.sa_live_site_data' ) not in ("unavailable", "unknown") %}
@@ -394,5 +427,168 @@ sensor:
             {% else %}
               {{ state_attr( "sensor.sa_import_export_power.time_stamp" ) }}
             {% endif %}
+
+# -----------------------------------------------------------------------------
+#
+# Solar Analytics - get hourly cumulative expected energy data for the day.
+# Used to report today's total expected generated energy to the most recent hour - a time lagging report of expected, and not a forecast.
+# Notes: this is not a published API 'get', but is used by the SA portal. 
+# The get also retrieves the daily total for the most recent hour for generated and consumed energy; not required given 5 min updates of the same above.
+# Checked every 30 minutes for changes in the last hour.
+
+#
+# Total Energy Generated Expected
+# Added 24-Jan-23 - initial version.
+#
+  - platform: rest
+    name: sa_data_by_hour
+    resource_template: https://portal.solaranalytics.com.au/api/v2/site_data/{{ states('input_text.sa_site_id') }}?all=false&gran=day&losses=true&power=false&trunc=false&tstart={{ now().strftime("%Y%m%d") }}&tend={{ now().strftime("%Y%m%d") }}
+    username: !secret sa_username
+    password: !secret sa_password
+    authentication: basic
+    value_template: >-
+      {{ as_timestamp(now()) | timestamp_custom ('%Y-%m-%d %H:%M:%S') }}
+# The rest get timestamp is only the current date - rather use the current date-time of the get.
+#      {{ as_timestamp(value_json['data'][0].t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S') }}
+    json_attributes:
+      - "data"
+    scan_interval: 1800
+
+  - platform: template
+    sensors:
+      sa_todays_energy_generated_expected_total:
+        friendly_name: Total Energy Generated Expected
+        unique_id: sa_todays_energy_generated_expected_total
+        unit_of_measurement: "Wh"
+        value_template: >
+          {% if states( 'sensor.sa_data_by_hour' ) not in ("unavailable", "unknown") %}
+            {{ states.sensor.sa_data_by_hour.attributes.data[0].energy_expected | int }}
+          {% else %}
+            {{ states( 'sensor.sa_todays_energy_generated_expected_total' ) }}
+          {% endif %}
+        icon_template: mdi:solar-power
+        device_class: "energy"
+        attribute_templates:
+          state_class: total_increasing
+          time_stamp: >
+            {% if states( 'sensor.sa_data_by_hour' ) not in ("unavailable", "unknown") %}
+              {{ states.sensor.sa_data_by_hour.state }}
+            {% else %}
+              {{ state_attr( "sensor.sa_todays_energy_generated_expected_total.time_stamp" ) }}
+            {% endif %}
+
+# -----------------------------------------------------------------------------
+#
+# Convert Solar Analtics Watt (W) measurements to kilo-Watts (kW).
+# Added 24-Jan-23 - initial version.
+#
+# Useful for display purposes.
+#
+
+#
+# Power conversions
+#
+      sa_consumption_power_kw:
+        friendly_name: Power Consumption - kW
+        unique_id: sa_consumption_power_kw
+        unit_of_measurement: "kW"
+        value_template: >
+          {{ (states('sensor.sa_consumption_power') | float / 1000) | round(2) }}
+        icon_template: mdi:home-lightning-bolt-outline
+        device_class: "power"
+# Use of state_class results in history being collected and the creation of a near duplicate data set in the HA database.
+#        attribute_templates:
+#          state_class: measurement
+
+      sa_generation_power_kw:
+        friendly_name: Power Generation - kW
+        unique_id: sa_generation_power_kw
+        unit_of_measurement: "kW"
+        value_template: >
+          {{ (states('sensor.sa_generation_power') | float / 1000) | round(2) }}
+        icon_template: mdi:solar-power
+        device_class: "power"
+#        attribute_templates:
+#          state_class: measurement
+
+      sa_import_export_power_kw:
+        friendly_name: Power Import Export - kW
+        unique_id: sa_import_export_power_kw
+        unit_of_measurement: "kW"
+        value_template: >
+          {{ (states('sensor.sa_import_export_power') | float / 1000) | round(2) }}
+        icon_template: mdi:transmission-tower
+        device_class: "power"
+#        attribute_templates:
+#          state_class: measurement
+
+# -----------------------------------------------------------------------------
+#
+# Home Assistant Energy Management extras
+# Added 10-Feb-23 - initial version
+#
+
+#
+# Todays Energy Total Net Cost
+#
+# HA EM automatically creates two entities respectively derived from the sa_todays_energy_imported and sa_todays_energy_exported
+#   > sa_todays_energy_imported_cost - cost of imported energy
+#   > sa_todays_energy_exported_compensation - revenue from exported energy
+# This new entity provides the net cost (imported cost minus exported revenue)
+#
+      sa_todays_energy_total_net_cost:
+        friendly_name: Todays Energy Total Net Cost
+        unique_id: sa_todays_energy_total_net_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon_template: mdi:cash
+        value_template: >
+          {{ (states.sensor.sa_todays_energy_imported_cost_2.state | float) - (states.sensor.sa_todays_energy_exported_compensation_2.state | float) }}
+        attribute_templates:
+          state_class: total_increasing
+
+#
+# Todays Energy Import Rate
+#
+# Useful for those on a variable electricity general usage rate configured in the HA Energy Manager (e.g. peak/off-peak/shoulder, Amber Energy wholesale spot market pricing).
+# The average import rate $/kWh = cumulative imported energy kWh divided by the cumulative imported energy cost $. Resets to zero at midnight.
+# The sensor sa_todays_energy_imported_cost is created by the HA Energy Manager when appropriate pricing is set-up for grid consumption. 
+#
+      sa_todays_energy_import_rate:
+        friendly_name: Todays Energy Import Rate
+        unique_id: sa_todays_energy_import_rate
+        unit_of_measurement: "$/kWh"
+        device_class: "monetary"
+        icon_template: mdi:cash-plus
+        value_template: >
+          {% if (states.sensor.sa_todays_energy_imported.state | float) != 0.0 %}
+            {{ ((states.sensor.sa_todays_energy_imported_cost_2.state | float) / (states.sensor.sa_todays_energy_imported.state | float)) | round(3) }}
+          {% else %}
+            {{ 0.0 }}
+          {% endif %}
+        attribute_templates:
+          state_class: measure
+
+#
+# Todays Energy Export Rate
+#
+# Useful for those on a variable electricity feed-in (FIT) rate configured in the HA Energy Manager (e.g. peak/off-peak/shoulder, Amber Energy wholesale spot market pricing).
+# The average export rate $/kWh = cumulative exported energy kWh divided by the cumulative exported energy revenue $. Resets to zero at midnight.
+# The sensor sa_todays_energy_exported_compensation is created by the HA Energy Manager when appropriate pricing is set-up for energy returned to the grid. 
+#
+      sa_todays_energy_export_rate:
+        friendly_name: Todays Energy Export Rate
+        unique_id: sa_todays_energy_export_rate
+        unit_of_measurement: "$/kWh"
+        device_class: "monetary"
+        icon_template: mdi:cash-plus
+        value_template: >
+          {% if (states.sensor.sa_todays_energy_exported.state | float) != 0.0 %}
+            {{ ((states.sensor.sa_todays_energy_exported_compensation_2.state | float) / (states.sensor.sa_todays_energy_exported.state | float)) | round(3) }}
+          {% else %}
+            {{ 0.0 }}
+          {% endif %}
+        attribute_templates:
+          state_class: measure
 
 # -----------------------------------------------------------------------------
