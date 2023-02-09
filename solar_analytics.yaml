@@ -543,7 +543,7 @@ sensor:
         device_class: "monetary"
         icon_template: mdi:cash
         value_template: >
-          {{ (states.sensor.sa_todays_energy_imported_cost_2.state | float) - (states.sensor.sa_todays_energy_exported_compensation_2.state | float) }}
+          {{ (states.sensor.sa_todays_energy_imported_cost.state | float) - (states.sensor.sa_todays_energy_exported_compensation.state | float) }}
         attribute_templates:
           state_class: total_increasing
 
@@ -562,7 +562,7 @@ sensor:
         icon_template: mdi:cash-plus
         value_template: >
           {% if (states.sensor.sa_todays_energy_imported.state | float) != 0.0 %}
-            {{ ((states.sensor.sa_todays_energy_imported_cost_2.state | float) / (states.sensor.sa_todays_energy_imported.state | float)) | round(3) }}
+            {{ ((states.sensor.sa_todays_energy_imported_cost.state | float) / (states.sensor.sa_todays_energy_imported.state | float)) | round(3) }}
           {% else %}
             {{ 0.0 }}
           {% endif %}
@@ -584,7 +584,7 @@ sensor:
         icon_template: mdi:cash-plus
         value_template: >
           {% if (states.sensor.sa_todays_energy_exported.state | float) != 0.0 %}
-            {{ ((states.sensor.sa_todays_energy_exported_compensation_2.state | float) / (states.sensor.sa_todays_energy_exported.state | float)) | round(3) }}
+            {{ ((states.sensor.sa_todays_energy_exported_compensation.state | float) / (states.sensor.sa_todays_energy_exported.state | float)) | round(3) }}
           {% else %}
             {{ 0.0 }}
           {% endif %}
