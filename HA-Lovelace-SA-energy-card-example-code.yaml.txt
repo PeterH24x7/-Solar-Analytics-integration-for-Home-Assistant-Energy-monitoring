@@ -20,7 +20,7 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.amber12ayrst_general_price
+        entity: sensor.your_retailer_general_price
         show_state: true
         name: Rate
         hold_action:
@@ -31,7 +31,7 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.amber12ayrst_feed_in_price
+        entity: sensor.your_retailer_feed_in_price
         name: FIT
         show_state: true
         hold_action:
