@@ -1,29 +1,47 @@
 SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 
-Installation Instructions:
-
+This code is provided as-is and without any warrantee or guarantees. 
+Further public contributions and enhancements are welcomed.
+ 
+INSTALLATION - NEW: 
 #   1. Copy this yaml file to the HA config directory.
 #   2. Include this file name as a package in the HA configuration.yaml. 
 #      For example -
 #        packages:
 #          pack_1: !include solar_analytics.yaml
-#   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file.
-#   4. Using developer tools check configuration and restart.  From States, review the 
+#   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file (see
+#      example on github).
+#   4. Using HA Developer Tools check the configuration and restart.  From States, review the 
 #      attributes for sa_data_by_5min to identify the device specific channel names and 
 #      update/delete the sa_todays_... xyz sensors to suit.
-#   6. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
-#      Individual Devices". Go to HA settings and then search for “Energy Configuration” 
+#   5. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
+#      Individual Devices". Go to HA Settings and then search for “Energy Configuration” 
 #      to make the changes.
-#   7. Also in HA Energy Configuration, enter the details for
+#   6. Also in HA Energy Configuration, enter the details for
 #      > Grid consumption - as sa_todays_energy_imported
 #      > Return to grid - as sa_todays_energy_exported
 #      > Solar production - as sa_todays_energy_generated_total
-#   8. If all working is correctly, the Energy dashboard should start populating data within 
+#   7. If all working is correctly, the Energy dashboard should start populating data within 
 #      a couple of hours.
-#   9. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
-#      details, then the net cost, import rate and export rate should work without further
-#      config. Else delete these sensors.
-#   10.Enjoy!
+#   8. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
+#      details, then the sa_todays_energy_imported_cost and sa_todays_energy_imported_cost sensors 
+#      should be auto-created by the Energy Manager. These sensors can be found as hidden Entities 
+#      (which can't be changed or deleted). If all good, then the sa_todays_energy_import_rate 
+#      (daily av. $/kWh), sa_todays_energy_export_rate (daily av. $/kWh) and
+#      sa_todays_energy_total_net_cost ($) should work without further config. If no pricing 
+#      is set, then delete these 3x sensors from the configuration.
+#   9. Enjoy!
+
+UPGRADING - FROM A PREVIOUS VERSION:
+#   This upgrade should not break the sensors created in a previous versions. It's recommended that the 
+#   previous version solar_analytics.yaml should be deleted, HA restarted, the new solar_analytics.yaml
+#   copied to the <config> folder and then HA restarted again. The sensors should start repopulating
+#   within their refresh timecycles. If any duplicate sensors happen to be created, go to HA Settings ->
+#   Devices & Services -> Entities and delete any "sa_..." prefixed sensors showing as unavailable or
+#   disabled, then restart once more and the correctly named sensor and its data should be restored
+#   to normal. Alternatively go to 'Developer Tools -> Services' and select 'Recorder: Purge Entities' 
+#   and then 'Choose entity' and select all the "sa_..." entities needing to purge immediately.
+#
 
 If you find my work useful, please buy me a coffee ... thank you!
    https://www.buymeacoffee.com/peter24x7
