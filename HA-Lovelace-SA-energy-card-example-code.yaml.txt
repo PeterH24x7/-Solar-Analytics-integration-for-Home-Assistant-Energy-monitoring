@@ -9,7 +9,7 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.nr_cs_import_export_power_kilo_watts
+        entity: sensor.sa_import_export_power
         show_state: true
         name: Power
         hold_action:
