@@ -17,7 +17,7 @@ This is a Solar Analytics public API integration into Home Assistant including s
        (of all generated).
     7. NEW - Electric Vehicle total energy kWh broken down into grid sourced (imported) kWh and generated kWh 
        with % of total charged kWh.
-    8. NEW - Energy history sensor for graphing each SA channel in Apex Charts (Lovelac sample code included 
+    8. NEW - Energy history sensor for graphing each SA channel in Apex Charts (Lovelace sample code included 
        as "SA-apex-charts.yaml" - unfortunately technically limited by HA to 2h20m.
 
 The solution provides daily cummulative consumed, generated, exported and imported energy (Wh). These 
