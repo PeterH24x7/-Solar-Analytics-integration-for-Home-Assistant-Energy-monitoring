@@ -1,0 +1,153 @@
+type: vertical-stack
+cards:
+  - type: markdown
+    content: '## Energy Costs'
+  - type: horizontal-stack
+    cards:
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.nr_cs_import_export_power_kilo_watts
+        show_state: true
+        name: Power
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/power
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.amber12ayrst_general_price
+        show_state: true
+        name: Rate
+        hold_action:
+          action: navigate
+          navigation_path: /a0d7b954_grafana
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.amber12ayrst_feed_in_price
+        name: FIT
+        show_state: true
+        hold_action:
+          action: navigate
+          navigation_path: /a0d7b954_grafana
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.nr_pv_output
+        name: PV Limit
+        show_state: true
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/pv
+  - type: horizontal-stack
+    cards:
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        name: Import
+        show_state: true
+        entity: sensor.sa_todays_energy_imported
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_energy_import_rate
+        show_state: true
+        name: Av. Rate
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_energy_export_rate
+        name: Av. FIT
+        show_state: true
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_energy_exported
+        show_state: true
+        name: Export
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+  - type: horizontal-stack
+    cards:
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_energy_imported_cost
+        show_state: true
+        name: Import $
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_energy_total_net_cost
+        show_state: true
+        name: Net $
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        name: Export $
+        show_state: true
+        entity: sensor.sa_todays_energy_exported_compensation
+        hold_action:
+          action: navigate
+          navigation_path: /lovelace/energy_price
+  - type: horizontal-stack
+    cards:
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_consumed_generated_percentage
+        show_state: true
+        name: Consumed
+        hold_action:
+          action: none
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.sa_todays_generated_consumed_percentage
+        show_state: true
+        name: Generated
+        hold_action:
+          action: none
