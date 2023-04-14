@@ -293,16 +293,17 @@ rest:
       - name: sa_data_by_5min_meter_reset
         unique_id: sa_data_by_5min_meter_reset
         value_template: >
-          {% if (value_json is defined) %}
-              {% if (value_json.data[0].energy_consumed is defined) 
-                  and (value_json.data[1].energy_consumed is not defined) %}
-                true
-              {% else %}
-                false
-              {% endif %}
+          {%- if (value_json is defined) %}
+            {% set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list %}
+            {% if most_recent_sensor_data|count == 1 %}
+              true
+            {% else %}
+              false
+            {% endif %}
           {% else %}
             unavailable
           {% endif %}
+
 
 # The last 5 minutes energy by sensor type per Solar Analytics channel. 
 # These sensors may be useful for calculating energy cost where energy costs vary at intervals down 
