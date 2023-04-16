@@ -1,0 +1,91 @@
+type: vertical-stack
+cards:
+  - type: markdown
+    content: '## EV Charging'
+  - type: horizontal-stack
+    cards:
+      - type: gauge
+        entity: sensor.yourev_battery_sensor
+        unit: '%'
+        min: 0
+        max: 100
+        needle: true
+        severity:
+          green: 50
+          yellow: 20
+          red: 0
+        name: EV Battery
+      - type: vertical-stack
+        cards:
+          - type: horizontal-stack
+            cards:
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.sa_todays_electric_vehicle_total
+                show_state: true
+                name: Charger
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.sa_todays_electric_vehicle_generated_percentage
+                show_state: true
+                name: Generated
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+          - type: horizontal-stack
+            cards:
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.amber_todays_electric_vehicle_imported_cost
+                show_state: true
+                name: Import $
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.amber_todays_electric_vehicle_generated_cost
+                name: Gen. $
+                show_state: true
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+          - type: horizontal-stack
+            cards:
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.amber_todays_electric_vehicle_total_cost
+                show_state: true
+                name: Net $
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+              - show_name: true
+                show_icon: false
+                type: button
+                tap_action:
+                  action: more-info
+                entity: sensor.amber_todays_electric_vehicle_rate_av
+                show_state: true
+                hold_action:
+                  action: navigate
+                  navigation_path: /lovelace/car
+                name: Av. Rate
