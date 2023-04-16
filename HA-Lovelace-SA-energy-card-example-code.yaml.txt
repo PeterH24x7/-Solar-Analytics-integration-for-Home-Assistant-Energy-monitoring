@@ -71,7 +71,7 @@ cards:
         name: Av. Rate
         hold_action:
           action: navigate
-          navigation_path: /lovelace/energy_price
+          navigation_path: /lovelace/energy_price 
       - show_name: true
         show_icon: false
         type: button
