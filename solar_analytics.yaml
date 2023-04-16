@@ -1,6 +1,8 @@
 # -----------------------------------------------------------------------------
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
+#
+# NOTE: THERE IS ALSO A 3-PHASE VERSION OF THIS INTEGRATION - REFER <SOLAR_ANALYTICS_3PHASE.YAML>.
 # 
 # Developed by Peter Hormann and with thanks to Glen S and Roving-Ronin for their contributions.
 #
@@ -26,7 +28,7 @@
 #                   Lovelace based settings changes.
 #                 - Added new "Total Energy Generated Expected" sensor to provide daily cumulative 
 #                   expected energy (as per the Solar Analytics portal).
-#                 - Added kW sensors as conversions of their respective W conterpart (note: not 
+#                 - Added kW sensors as conversions of their respective W counterpart (note: not 
 #                   required for energy entities as of HA 2023.2).
 #                 - Where HA EM is used for cost calculations added "Todays Energy Total Net Cost" 
 #                   (import cost minus feed-in revenue).
