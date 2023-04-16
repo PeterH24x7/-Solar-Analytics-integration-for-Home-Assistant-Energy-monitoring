@@ -1,0 +1,79 @@
+# -----------------------------------------------------------------------------
+#
+# AMBER forecast integration for Home Assistant
+# Requires HA Amber Electric Integration to be installed.
+# 
+# Developed by Peter Hormann
+#
+# Created: 9-Feb-2023
+#
+# Last updated: initial release
+#
+# Updates: 
+#   None
+#
+# Creates a new "amber_forecast" sensor which contains the curent time and 24 hours 
+# future time in 30 minute increments, the general forecast prices and the feed-in 
+# forecast prices stored in an array format suitable for use by a Apex Chart card 
+# (installed via HACS) - see <amber_forecast_chart.yaml> for the card YAML code.
+#
+# Installation: 
+#   1. Copy this yaml file to the HA config directory.
+#   2. Include this file name as a package in the HA <configuration.yaml>. 
+#      For example -
+#        packages:
+#          pack_1: !include amber_forecast.yaml
+#   3. Rename "amber_yourname_xyz" sensors to match HA Amber installation device naming.
+#   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
+#   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
+#   6. Enjoy!
+#
+# If you find my work useful, please buy me a coffee ... thank you!
+#   https://www.buymeacoffee.com/peter24x7
+#
+# Reference for more information and updates:
+#   https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring
+#
+# -----------------------------------------------------------------------------
+
+sensor:
+  - platform: template
+    sensors:
+      amber_forecast:
+        friendly_name: Amber Forecast
+        unique_id: amber_forecast
+        icon_template: mdi:chart-line
+        value_template: >
+          {{ as_local(as_datetime(states.sensor.amber_yourname_general_price.attributes.nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")  }}
+        attribute_templates: 
+          times: >
+            {% set ns = namespace( times = [ as_local( as_datetime( states.sensor.amber_yourname_general_price.attributes.nem_date) 
+                - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S") ] ) -%}
+            {%- set today = state_attr('sensor.amber_yourname_general_forecast','forecasts') -%}
+            {%- for hours in today -%}
+              {%- set ns.times = ns.times + [ as_local( as_datetime(hours.nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S") ] -%}
+            {%- endfor -%}
+            {{ ns.times }}
+          general_price: >
+            {% set ns = namespace( general = [ ( states.sensor.amber_yourname_general_price.state|float ) ] ) -%}
+            {%- set today = state_attr('sensor.amber_yourname_general_forecast','forecasts') -%}
+            {%- for hours in today -%}
+              {%- set ns.general = ns.general + [(hours.per_kwh)] -%}
+            {%- endfor -%}
+            {{ ns.general }}
+          fit_price: >
+            {% set ns = namespace( fit = [ ( states.sensor.amber_yourname_general_price.attributes.spot_per_kwh|float ) ] ) -%}
+            {%- set today = state_attr('sensor.amber_yourname_general_forecast','forecasts') -%}
+            {%- for hours in today -%}
+              {%- set ns.fit = ns.fit + [(hours.spot_per_kwh)] -%}
+            {%- endfor -%}
+            {{ ns.fit }}
+          renewables_percent: >
+            {% set ns = namespace( renewables = [ ( states.sensor.amber_yourname_general_price.attributes.renewables|float ) ] ) -%}
+            {%- set today = state_attr('sensor.amber_yourname_general_forecast','forecasts') -%}
+            {%- for hours in today -%}
+              {%- set ns.renewables = ns.renewables + [(hours.renewables)] -%}
+            {%- endfor -%}
+            {{ ns.renewables }}
+
+# -----------------------------------------------------------------------------
