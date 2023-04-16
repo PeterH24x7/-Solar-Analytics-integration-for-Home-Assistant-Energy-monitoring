@@ -1,0 +1,186 @@
+# -----------------------------------------------------------------------------
+#
+# EV charging integration for Home Assistant Energy Management. 
+# Requires <solar_analytics.yaml> to be installed or an alternative source
+# of Watt-hour charging data.
+# 
+# Developed by Peter Hormann
+#
+# Created: 9-Apr-2023
+#
+# Last updated: initial release
+#
+# Updates: 
+#   None
+#
+# Calculate EV cost to charge for both generated and imported energy, total net 
+# cost and average combined charging rate for the day.
+#
+# If not using Solar Analytics, this integration requires a source of vehicle charged 
+# generated or imported sources updated in 5 minute interval Watt-hours. A binary 
+# sensor (replacing sa_data_by_5min_meter_reset) is also required to indicate if/when 
+# the metering period has been reset - e.g. at midnight - must be true for one 5 
+# minute interval.
+#
+# If not using the Amber Energy integration, then replace the last_price attribute
+# with an alternative energy price sensor (or simply a constant - e.g. 0.25).
+#
+# Installation: 
+#   1. Copy this yaml file to the HA config directory.
+#   2. Include this file name as a package in the HA <configuration.yaml>. 
+#      For example -
+#        packages:
+#          pack_2: !include amber_ev_charge_cost.yaml
+#   3. Rename "amber_yourname_xyz" sensors to match HA Amber installation sensor naming.
+#   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
+#   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
+#   6. Enjoy!
+#
+# If you find my work useful, please buy me a coffee ... thank you!
+#   https://www.buymeacoffee.com/peter24x7
+#
+# Reference for more information and updates:
+#   https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring
+#
+# -----------------------------------------------------------------------------
+
+sensor:
+  - platform: template
+    sensors:
+      amber_todays_electric_vehicle_total_cost:
+        friendly_name: Todays Electric Vehicle Total Cost
+        unique_id: amber_todays_electric_vehicle_total_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon_template: mdi:cash
+        value_template: >
+          {% if states.sensor.sa_data_by_5min_load_ev_charger_total.state|default(0.0)|float > 0.0 -%}
+            {% if (states("sensor.amber_todays_electric_vehicle_imported_cost") not in ('unknown', 'unavailable') 
+                and (states("sensor.amber_todays_electric_vehicle_generated_cost") not in ('unknown', 'unavailable')) ) %}
+              {{ states.sensor.amber_todays_electric_vehicle_generated_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_electric_vehicle_imported_cost.state|default(0.0)|float }}
+            {% else %}
+              0.0
+            {% endif %}
+          {% else %}
+            0.0
+          {% endif %}
+        attribute_templates: 
+          state_class: total_increasing
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+      amber_todays_electric_vehicle_rate_av:
+        friendly_name: "Todays Electric Vehicle Rate Average"
+        unique_id: amber_todays_electric_vehicle_rate_av
+        unit_of_measurement: "$/kWh"
+        device_class: "monetary"
+        icon_template: mdi:cash-plus
+        value_template: >
+          {%- if ( states.sensor.amber_todays_electric_vehicle_total_cost.state is defined ) 
+              and ( states.sensor.sa_data_by_5min_load_ev_charger_total.state is defined ) -%}
+            {%- if (states.sensor.sa_data_by_5min_load_ev_charger_total.state | int) > 100 -%}
+              {{- ((states.sensor.amber_todays_electric_vehicle_total_cost.state|default(0.0)|float) / 
+                (states.sensor.sa_data_by_5min_load_ev_charger_total.state|default(1.0)|float) 
+                * 1000.0 ) | round(3) -}}
+            {%- else -%}
+              none
+            {%- endif -%}
+          {%- else -%}
+            unavailable
+          {%- endif -%}
+        attribute_templates:
+          state_class: measure
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+template:
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_todays_electric_vehicle_generated
+        attribute: time_stamp
+    sensor:
+      - name: "amber_todays_electric_vehicle_generated_cost_inc"
+        unique_id: amber_todays_electric_vehicle_generated_cost_inc
+        state: >
+                {%- if states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+                  {{- states.sensor.amber_todays_electric_vehicle_generated_cost_inc.attributes.last_price|default(0.0)|float 
+                        * states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float 
+                        / 1000.0 -}}
+                {%- else -%}
+                  0.0
+                {%- endif -%}
+        attributes:
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          last_price: "{{ states.sensor.amber_yourname_feed_in_price.state|default(0.0) }}"
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_todays_electric_vehicle_imported
+        attribute: time_stamp
+    sensor:
+      - name: "amber_todays_electric_vehicle_imported_cost_inc"
+        unique_id: amber_todays_electric_vehicle_imported_cost_inc
+        state: >
+                {%- if states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+                  {{- states.sensor.amber_todays_electric_vehicle_imported_cost_inc.attributes.last_price|default(0.0)|float 
+                        * states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float 
+                        / 1000.0 -}}
+                {%- else -%}
+                  0.0
+                {%- endif -%}
+        attributes: 
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          last_price: "{{ states.sensor.amber_yourname_general_price.state|default(0.0) }}"
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.amber_todays_electric_vehicle_generated_cost_inc
+        attribute: time_stamp
+    sensor:
+      - name: "Todays Electric Vehicle Generated Cost"
+        unique_id: amber_todays_electric_vehicle_generated_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon: mdi:cash
+        state: >
+          {% if (states("sensor.amber_todays_electric_vehicle_generated_cost_inc") not in ('unknown', 'unavailable') 
+                and (states("sensor.amber_todays_electric_vehicle_generated_cost") not in ('unknown', 'unavailable')) ) %}
+            {% if states.sensor.sa_data_by_5min_meter_reset.state == "true" %}
+              {{ states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|default(0.0)|float }}
+            {% else %}
+              {{ states.sensor.amber_todays_electric_vehicle_generated_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|default(0.0)|float }}
+            {% endif %}
+          {%- else -%}
+            {{ states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|default(0.0)|float }}
+          {%- endif -%}
+        attributes: 
+          state_class: total_increasing
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.amber_todays_electric_vehicle_imported_cost_inc
+        attribute: time_stamp
+    sensor:
+      - name: "Todays Electric Vehicle Imported Cost"
+        unique_id: amber_todays_electric_vehicle_imported_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon: mdi:cash
+        state: >
+          {% if (states("sensor.amber_todays_electric_vehicle_imported_cost_inc") not in ('unknown', 'unavailable') 
+                and (states("sensor.amber_todays_electric_vehicle_imported_cost") not in ('unknown', 'unavailable')) ) %}
+            {% if states.sensor.sa_data_by_5min_meter_reset.state == "true" %}
+              {{ states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|default(0.0)|float }}
+            {% else %}
+              {{ states.sensor.amber_todays_electric_vehicle_imported_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|default(0.0)|float }}
+            {% endif %}
+          {%- else -%}
+            {{ states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|default(0.0)|float }}
+          {%- endif -%}
+        attributes: 
+          state_class: total_increasing
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+# -----------------------------------------------------------------------------
