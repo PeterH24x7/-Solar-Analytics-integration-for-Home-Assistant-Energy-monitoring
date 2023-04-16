@@ -42,6 +42,6 @@ UPGRADING - FROM A PREVIOUS VERSION:
 #   to normal. Alternatively go to 'Developer Tools -> Services' and select 'Recorder: Purge Entities' 
 #   and then 'Choose entity' and select all the "sa_..." entities needing to purge immediately.
 #
-
+ 
 If you find my work useful, please buy me a coffee ... thank you!
    https://www.buymeacoffee.com/peter24x7
