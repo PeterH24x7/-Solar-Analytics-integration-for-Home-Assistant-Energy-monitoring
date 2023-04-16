@@ -40,6 +40,6 @@ https://api-docs.solaranalytics.com/OpenAPI-Specs/sapublic-openapi.yaml
 For those using Amber Electric as their electricity retailer and/or with an EV there are additional bonus
 sensors defined in <amber_forecast.yaml> and <amber_ev_charge_cost.yaml> respectively. See the code header 
 for the detailed description and usage.
-
+ 
 If you find my work useful, please buy me a coffee ... thank you!
   https://www.buymeacoffee.com/peter24x7
