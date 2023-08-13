@@ -117,7 +117,7 @@
 #   7. If all working is correctly, the Energy dashboard should start populating data within 
 #      a couple of hours.
 #   8. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
-#      details, then the sa_todays_energy_imported_cost and sa_todays_energy_imported_cost sensors 
+#      details, then the sa_todays_energy_imported_cost and sa_todays_energy_exported_compensation sensors 
 #      should be auto-created by the Energy Manager. These sensors can be found as hidden Entities 
 #      (which can't be changed or deleted). If all good, then the sa_todays_energy_import_rate 
 #      (daily av. $/kWh), sa_todays_energy_export_rate (daily av. $/kWh) and
