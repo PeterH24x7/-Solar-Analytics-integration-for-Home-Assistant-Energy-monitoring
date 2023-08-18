@@ -1,20 +1,20 @@
 # -----------------------------------------------------------------------------
 #
-# EV charging integration for Home Assistant Energy Management. 
+# Stove Oven integration for Home Assistant Energy Management. 
 # Requires <solar_analytics.yaml> to be installed or an alternative source
 # of Watt-hour charging data.
 # 
 # Developed by Peter Hormann
 #
-# Created: 9-Apr-2023
+# Created: 5-May-2023
 #
-# Last updated: 2-Jun-2023
+# Last updated: 18-May-23
 #
 # Updates: 
 #   18-May-23 - fixed meter resetting based on daily trigger at midnight.
 #   2-Jun-23  - fixed error detection.
 #
-# Calculate EV cost to charge for both generated and imported energy, total net 
+# Calculate Stove Oven cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
 #
 # If not using Solar Analytics, this integration requires a source of vehicle charged 
@@ -48,19 +48,37 @@
 sensor:
   - platform: template
     sensors:
-      amber_todays_electric_vehicle_total_cost:
-        friendly_name: "Electric Vehicle Total Cost"
-        unique_id: amber_todays_electric_vehicle_total_cost
+      amber_todays_other_total_cost:
+        friendly_name: "Todays Other Total Cost"
+        unique_id: amber_todays_other_total_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon_template: mdi:cash
-        value_template: >-
-          {%- if states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0) > 0.0 -%}
-            {%- if states.sensor.amber_todays_electric_vehicle_imported_cost.state|is_number 
-                and states.sensor.amber_todays_electric_vehicle_generated_cost.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0) 
-                -}}
+        value_template: >
+          {{- ( states.sensor.sa_todays_energy_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_hot_water_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0)
+              ) 
+              | round(4)
+            -}}
+        attribute_templates: 
+          state_class: total
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+      amber_todays_stove_oven_total_cost:
+        friendly_name: "Stove Oven Total Cost"
+        unique_id: amber_todays_stove_oven_total_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon_template: mdi:cash
+        value_template: >
+          {% if states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0) > 0.0 -%}
+            {%- if states("sensor.amber_todays_stove_oven_imported_cost")|is_number 
+                and states("sensor.amber_todays_stove_oven_generated_cost")|is_number -%}
+              {{- states.sensor.amber_todays_stove_oven_generated_cost.state|float(0.0)
+                  + states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0) -}}
             {%- else -%}
               0.0
             {%- endif -%}
@@ -68,28 +86,28 @@ sensor:
             0.0
           {%- endif -%}
         attribute_templates: 
-          state_class: total
+#          state_class: total_increasing
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      amber_todays_electric_vehicle_rate_av:
-        friendly_name: "Electric Vehicle Rate Average"
-        unique_id: amber_todays_electric_vehicle_rate_av
+      amber_todays_stove_oven_rate_av:
+        friendly_name: "Stove Oven Rate Average"
+        unique_id: amber_todays_stove_oven_rate_av
         unit_of_measurement: "$/kWh"
         device_class: "monetary"
         icon_template: mdi:cash-plus
         value_template: >-
-          {%- if states.sensor.amber_todays_electric_vehicle_total_cost.state|is_number 
-              and states.sensor.sa_data_by_5min_load_ev_charger_total.state|is_number -%}
-            {%- if states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0) > 100.0 -%}
-              {{- ( states.sensor.amber_todays_electric_vehicle_total_cost.state|float(0.0) 
-                    / states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(1.0) 
+          {%- if states.sensor.amber_todays_stove_oven_total_cost.state|is_number 
+              and states.sensor.sa_data_by_5min_load_stove_total.state|is_number -%}
+            {%- if states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0) > 100.0 -%}
+              {{- ( states.sensor.amber_todays_stove_oven_total_cost.state|float(0.0) 
+                    / states.sensor.sa_data_by_5min_load_stove_total.state|float(1.0)
                     * 1000.0 ) | round(3) 
                 -}}
             {%- else -%}
-              {{- this.state|default(0.0) -}}
+              {{- states.sensor.amber_todays_stove_oven_rate_av.state|default(0.0) -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|default(0.0) -}}
+            {{- states.sensor.amber_todays_stove_oven_rate_av.state|default(0.0) -}}
           {%- endif -%}
         attribute_templates:
           state_class: measure
@@ -97,34 +115,18 @@ sensor:
 
 
 template:
-#
-# Daily energy metering reset sensor
-#
-# Meter resets at midnight.
-  - trigger:
-      - platform: time
-        at: "00:00"
-    binary_sensor:
-      - name: "amber_meter_reset"
-        unique_id: amber_meter_reset
-        state: "on"
-        auto_off: "00:00:10"
-        attributes:
-          time_stamp: "{{- as_timestamp(now()) | timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}"
-
-
   - trigger:
       - platform: state
-        entity_id: sensor.sa_todays_electric_vehicle_generated
+        entity_id: sensor.sa_todays_stove_oven_generated
         attribute: time_stamp
     sensor:
-      - name: "amber_todays_electric_vehicle_generated_cost_inc"
-        unique_id: amber_todays_electric_vehicle_generated_cost_inc
-        state: >-
-          {%- if states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_electric_vehicle_generated_cost_inc.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|float(0.0) 
-                / 1000.0 
+      - name: "amber_todays_stove_oven_generated_inc_cost"
+        unique_id: amber_todays_stove_oven_generated_inc_cost
+        state: >
+          {%- if states.sensor.sa_todays_stove_oven_generated.attributes.st_energy_last5min|float(0.0) > 0.0 -%}
+            {{- states.sensor.amber_todays_stove_oven_generated_inc_cost.attributes.last_price|float(0.0) 
+                  * states.sensor.sa_todays_stove_oven_generated.attributes.st_energy_last5min|float(0.0) 
+                  / 1000.0 
               -}}
           {%- else -%}
             0.0
@@ -135,15 +137,15 @@ template:
 
   - trigger:
       - platform: state
-        entity_id: sensor.sa_todays_electric_vehicle_imported
+        entity_id: sensor.sa_todays_stove_oven_imported
         attribute: time_stamp
     sensor:
-      - name: "amber_todays_electric_vehicle_imported_cost_inc"
-        unique_id: amber_todays_electric_vehicle_imported_cost_inc
-        state: >-
-          {%- if states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_electric_vehicle_imported_cost_inc.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|float(0.0) 
+      - name: "amber_todays_stove_oven_imported_inc_cost"
+        unique_id: amber_todays_stove_oven_imported_inc_cost
+        state: >
+          {%- if states.sensor.sa_todays_stove_oven_imported.attributes.st_energy_last5min|float(0.0) > 0.0 -%}
+            {{- states.sensor.amber_todays_stove_oven_imported_inc_cost.attributes.last_price|float(0.0) 
+                * states.sensor.sa_todays_stove_oven_imported.attributes.st_energy_last5min|float(0.0) 
                 / 1000.0 
               -}}
           {%- else -%}
@@ -155,7 +157,7 @@ template:
 
   - trigger:
       - platform: state
-        entity_id: sensor.amber_todays_electric_vehicle_generated_cost_inc
+        entity_id: sensor.amber_todays_stove_oven_generated_inc_cost
         attribute: time_stamp
       - platform: state
         entity_id: binary_sensor.amber_meter_reset
@@ -165,37 +167,36 @@ template:
           - "unavailable"
         to: "on"
     sensor:
-      - name: "Electric Vehicle Generated Cost"
-        unique_id: amber_todays_electric_vehicle_generated_cost
+      - name: "Stove Oven Generated Cost"
+        unique_id: amber_todays_stove_oven_generated_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
-        state: >-
+        state: >
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
-            {%- if states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|float(0.0) 
+            {%- if states("sensor.amber_todays_stove_oven_generated_inc_cost")|is_number -%}
+              {{- states.sensor.amber_todays_stove_oven_generated_cost.state|float(0.0) 
+                  + states.sensor.amber_todays_stove_oven_generated_cost.state|float(0.0) 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state
-                  if states.sensor.amber_todays_electric_vehicle_generated_cost.state|is_number 
+              {{- states.sensor.amber_todays_stove_oven_generated_cost.state
+                  if states.sensor.amber_todays_stove_oven_generated_cost.state|is_number
                   else 0.0 
                 -}}
             {%- endif -%}
           {%- endif -%}
         attributes: 
           state_class: total
-          time_stamp: >-
+          time_stamp: >
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state 
-              -}}
+                else states.sensor.sa_data_by_5min_time_stamp.state -}}
 
   - trigger:
       - platform: state
-        entity_id: sensor.amber_todays_electric_vehicle_imported_cost_inc
+        entity_id: sensor.amber_todays_stove_oven_imported_inc_cost
         attribute: time_stamp
       - platform: state
         entity_id: binary_sensor.amber_meter_reset
@@ -205,29 +206,29 @@ template:
           - "unavailable"
         to: "on"
     sensor:
-      - name: "Electric Vehicle Imported Cost"
-        unique_id: amber_todays_electric_vehicle_imported_cost
+      - name: "Stove Oven Imported Cost"
+        unique_id: amber_todays_stove_oven_imported_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
-        state: >-
+        state: >
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
-            {%- if states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|float(0.0) 
+            {%- if states("sensor.amber_todays_stove_oven_imported_inc_cost")|is_number -%}
+              {{- states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0) 
+                  + states.sensor.amber_todays_stove_oven_imported_inc_cost.state|float(0.0) 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_electric_vehicle_imported_cost.state
-                  if states.sensor.amber_todays_electric_vehicle_imported_cost.state|is_number 
+              {{- states.sensor.amber_todays_stove_oven_imported_cost.state
+                  if states.sensor.amber_todays_stove_oven_imported_cost.state|is_number 
                   else 0.0 
                 -}}
             {%- endif -%}
           {%- endif -%}
         attributes: 
           state_class: total
-          time_stamp: >-
+          time_stamp: >
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
                 else states.sensor.sa_data_by_5min_time_stamp.state 
