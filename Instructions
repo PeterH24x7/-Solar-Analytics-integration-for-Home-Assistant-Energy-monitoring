@@ -4,8 +4,8 @@ This code is provided as-is and without any warrantee or guarantees.
 Further public contributions and enhancements are welcomed.
  
 INSTALLATION - NEW: 
-#   1. Copy this yaml file to the HA config directory.
-#   2. Include this file name as a package in the HA configuration.yaml. 
+#   1. Copy the solar_analytics.yaml file (or other varients) to the HA config directory.
+#   2. Include the file name as a package in the HA configuration.yaml. 
 #      For example -
 #        packages:
 #          pack_1: !include solar_analytics.yaml
@@ -24,7 +24,7 @@ INSTALLATION - NEW:
 #   7. If all working is correctly, the Energy dashboard should start populating data within 
 #      a couple of hours.
 #   8. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
-#      details, then the sa_todays_energy_imported_cost and sa_todays_energy_imported_cost sensors 
+#      details, then the sa_todays_energy_imported_cost and sa_todays_energy_exported_compensation sensors 
 #      should be auto-created by the Energy Manager. These sensors can be found as hidden Entities 
 #      (which can't be changed or deleted). If all good, then the sa_todays_energy_import_rate 
 #      (daily av. $/kWh), sa_todays_energy_export_rate (daily av. $/kWh) and
@@ -34,14 +34,14 @@ INSTALLATION - NEW:
 
 UPGRADING - FROM A PREVIOUS VERSION:
 #   This upgrade should not break the sensors created in a previous versions. It's recommended that the 
-#   previous version solar_analytics.yaml should be deleted, HA restarted, the new solar_analytics.yaml
+#   previous version solar_analytics.yaml should be deleted/renamed, HA restarted, the new solar_analytics.yaml
 #   copied to the <config> folder and then HA restarted again. The sensors should start repopulating
 #   within their refresh timecycles. If any duplicate sensors happen to be created, go to HA Settings ->
 #   Devices & Services -> Entities and delete any "sa_..." prefixed sensors showing as unavailable or
 #   disabled, then restart once more and the correctly named sensor and its data should be restored
 #   to normal. Alternatively go to 'Developer Tools -> Services' and select 'Recorder: Purge Entities' 
 #   and then 'Choose entity' and select all the "sa_..." entities needing to purge immediately.
-#
+
  
 If you find my work useful, please buy me a coffee ... thank you!
    https://www.buymeacoffee.com/peter24x7
