@@ -6,7 +6,7 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 12-Aug-2023 as Release 6 - see update notes below.
+# Last updated: 12-Aug-2023 as Release 6.1 - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -77,6 +77,8 @@
 #                   float(0.0) and int(0) default values.
 #                 - added comment markers for begin/end code to be deleted for 3-phase implementation.
 #                 - general code tidy-up, layout consistency and readability improvements.
+#       18-Aug-23 - Release 6.1 - minor fix
+#                 - sa_todays_energy_generated_expected_total changed to "state_class: total".
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -832,7 +834,7 @@ sensor:
         icon_template: mdi:solar-power
         device_class: "energy"
         attribute_templates:
-#          state_class: total_increasing
+          state_class: total
           time_stamp: "{{- states.sensor.sa_data_by_hour_time_stamp.state -}}"
 
 #
