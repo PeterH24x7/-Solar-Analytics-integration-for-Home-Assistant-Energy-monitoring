@@ -13,11 +13,11 @@ This is a Solar Analytics public API integration into Home Assistant including s
          > cumulative daily net cost ($)
          > average import rate ($/kWh)
          > average export rate ($/kWh)
-    6. NEW - Generated energy consumed kWh and % (of all generated), and Consumed energy generated kWh and % 
+    6. Generated energy consumed kWh and % (of all generated), and Consumed energy generated kWh and % 
        (of all generated).
-    7. NEW - Electric Vehicle total energy kWh broken down into grid sourced (imported) kWh and generated kWh 
+    7. Electric Vehicle total energy kWh broken down into grid sourced (imported) kWh and generated kWh 
        with % of total charged kWh.
-    8. NEW - Energy history sensor for graphing each SA channel in Apex Charts (Lovelace sample code included 
+    8. Energy history sensor for graphing each SA channel in Apex Charts (Lovelace sample code included 
        as <SA-apex-charts.yaml> - unfortunately technically limited by HA to 2h20m.     
 
 The solution provides daily cummulative consumed, generated, exported and imported energy (Wh). These 
