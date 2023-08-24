@@ -1,12 +1,12 @@
 # -----------------------------------------------------------------------------
 #
-# SOLAR ANALYTICS 3-PHASE integration for Home Assistant Energy Monitoring
+# SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 # 
 # Developed by Peter Hormann and with thanks to Glen S and Roving-Ronin for their contributions.
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 12-Aug-2023 as Release 6.1 - see update notes below.
+# Last updated: 24-Aug-2023 as Release 6.2 - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -60,7 +60,7 @@
 #                   (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
 #                   Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
 #                   the number of intervals if that's desireable, but at a lower resolution.
-#       12-Aug-23 - RELEASE 6 - MINOR FIXES, IMPROVED ERROR CHECKING AND CODE TIDY-UP
+#       24-Aug-23 - RELEASE 6.2 - MINOR FIXES, IMPROVED ERROR CHECKING AND CODE TIDY-UP
 #                 - sa_data_by_5min_meter_reset is depracated as not used/required (separate Amber code
 #                   has own midnight meter trigger). Uncomment if still required.
 #                 - sa_data_by_5min_exported_total and sa_data_by_5min_consumed_solar_total added error
@@ -77,8 +77,6 @@
 #                   float(0.0) and int(0) default values.
 #                 - added comment markers for begin/end code to be deleted for 3-phase implementation.
 #                 - general code tidy-up, layout consistency and readability improvements.
-#       18-Aug-23 - Release 6.1 - minor fix
-#                 - sa_todays_energy_generated_expected_total changed to "state_class: total".
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -355,13 +353,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_energy_generated.state|default(0.0) -}}
           {%- endif -%}
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
 
 # Daily cumulative total "raw" sensors per Solar Analytics channel reset at midnight.
 # These sensors are used for feeding "fully configured" template sensors defined further down below.
@@ -392,13 +383,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_energy_generated_total.state|default("unavailable") -}}
           {%- endif -%}
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
 
 # Additional daily cumulative total "raw" sensors that reset at midnight. 
 # These sensors are derived/calculated from the main Solar Analytics channels.
@@ -476,21 +460,7 @@ rest:
             {{- states.sensor.sa_data_by_5min_consumed_solar_total.state|default("unavailable") -}}
           {%- endif -%}
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
 
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
-
-#
-### DELETE FOR GITHUB SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR GITHUB SOLUTION - END <<<<<<<<<<
-#
 
 # 
 # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
@@ -548,13 +518,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_energy_generated.state|default("unavailable") -}}
           {%- endif -%}
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
 
 # 18-May-23 - CHANGED - added time stamp attribute.
       - name: sa_data_by_5min_history_time_stamp_count
@@ -747,13 +710,6 @@ sensor:
           state_class: "total_increasing"
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
 
 # Solar Analytics derived total energy sensors
       sa_todays_energy_imported:
@@ -786,21 +742,6 @@ sensor:
           state_class: "total_increasing"
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
-
-#
-### DELETE FOR GITHUB SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR GITHUB SOLUTION - END <<<<<<<<<<
-#
 
 # -----------------------------------------------------------------------------
 #
@@ -834,7 +775,7 @@ sensor:
         icon_template: mdi:solar-power
         device_class: "energy"
         attribute_templates:
-          state_class: total
+          state_class: "total"
           time_stamp: "{{- states.sensor.sa_data_by_hour_time_stamp.state -}}"
 
 #
@@ -945,13 +886,6 @@ sensor:
           times_simple: "{{- states.sensor.sa_data_by_5min_history_time_stamp.state -}}"
           energy_consumed: "{{- states.sensor.sa_data_by_5min_history_energy_consumed.state -}}"
           energy_generated: "{{- states.sensor.sa_data_by_5min_history_energy_generated.state -}}"
-#
-### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
-#
-
-#
-### DELETE FOR 3-PHASE SOLUTION - END <<<<<<<<<<
-#
 
 
 # -----------------------------------------------------------------------------
@@ -986,7 +920,7 @@ sensor:
         icon_template: mdi:solar-power
         device_class: "power"
         attribute_templates:
-          state_class: measurement
+          state_class: "measurement"
           time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
       sa_import_export_power:
@@ -1001,7 +935,7 @@ sensor:
         icon_template: mdi:transmission-tower
         device_class: "power"
         attribute_templates:
-          state_class: measurement
+          state_class: "measurement"
           time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
 
@@ -1031,7 +965,7 @@ sensor:
               - (states.sensor.sa_todays_energy_exported_compensation.state|float(0.0)) 
             -}}
         attribute_templates:
-          state_class: total_increasing
+          state_class: "total"
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
 template:
@@ -1072,7 +1006,7 @@ template:
             unavailable
           {%- endif -%}
         attributes: 
-          state_class: measure
+          state_class: "measurement"
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
 #
@@ -1111,7 +1045,7 @@ template:
             unavailable
           {%- endif -%}
         attributes:
-          state_class: measure
+          state_class: "measurement"
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
 # -----------------------------------------------------------------------------
