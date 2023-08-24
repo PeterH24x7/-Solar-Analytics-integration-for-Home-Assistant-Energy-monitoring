@@ -6,9 +6,8 @@ This is a Solar Analytics public API integration into Home Assistant including s
     1. Solar PV system status; 
     2. Daily cumulative 5-minute energy Watt-hours per available channel (up to 6);
     3. Generated expected energy to the hour within the day; 
-    4. 1-minute power Watts related reporting of consumed, generated and import-exported with conversions to 
-       kilo-Watts.
-    5. Where costs are configured in HA Energy Monitoring (fixed, peak/off-peak/shoulder, spot market 
+    4. 1-minute power Watts related reporting of consumed, generated and import-exported.
+    5. Where costs are configured in the HA Energy Monitoring (fixed, peak/off-peak/shoulder, spot market 
        - e.g. Amber) provides 
          > cumulative daily net cost ($)
          > average import rate ($/kWh)
