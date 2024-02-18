@@ -6,7 +6,7 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 24-Aug-2023 as Release 6.2 - see update notes below.
+# Last updated: 7-Feb-2024 as Release 7 - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -77,6 +77,15 @@
 #                   float(0.0) and int(0) default values.
 #                 - added comment markers for begin/end code to be deleted for 3-phase implementation.
 #                 - general code tidy-up, layout consistency and readability improvements.
+#       31-Aug-23 - RELEASE 6.3 DRAFT - MINOR FIXES for anomalous data gets.
+#                 - Enhanced data checking for sa_data_by_5min... REST get related sensors where the data's 
+#                   first entry [0] was strangely found to contain 'null' data, but subsequent data [1]+ 
+#                   all okay.
+#       7-Feb-24  - RELEASE 7
+#                 - Address SA data get anomoly where first record [0] contains 'null' data for 
+#                   energy_generated, energy_consumed etc.
+#                 - Added new sensor sa_status_log_entry that gets the site fault status (if not okay). 
+#                   Fault related details are in the sensor attributes.
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -204,7 +213,6 @@ automation:
     mode: single
 
 
-
 # -----------------------------------------------------------------------------
 #
 # Solar Analytics - rest get of latest token using username and password credentials.
@@ -281,6 +289,55 @@ rest:
           - "mer_status"
           - "mer_text"
 
+# -----------------------------------------------------------------------------
+#
+# Solar Analytics - get the site fault status for the specified site_id.
+# Updated every 5 minutes.
+#
+# 7-Feb-24 - added as new sensor.
+#
+# Note: this is not a published API 'get', but is used by the SA portal to show a sites fault status (if any).
+#
+  - resource_template: https://portal.solaranalytics.com.au/api/v4/site_status/{{- states('input_text.sa_site_id') -}}?event_group=all
+    headers: 
+      Authorization: >
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+    scan_interval: 300
+    sensor:
+      - name: sa_status_log_entry
+        unique_id: sa_status_log_entry
+        value_template: >-
+          {%- if (value_json is defined) -%}
+            {%- set log_entry = value_json.data.event_list[0].fault_status|lower -%}
+          {%- else -%}
+            {%- set log_entry = "invalid" -%}
+          {%- endif -%}
+          {%- set status_map = {
+            'resolved' : 'Good',
+            'action_owner' : 'Check device',
+            'moderate_under_production' : 'Under production',
+            'zero_energy_production' : 'Zero production',
+            'ongoing' : 'Ongoing problem',
+            'unavailable' : 'API unavailable' }
+            -%}
+          {%- if log_entry in status_map -%}
+            {{- status_map[log_entry] -}}
+          {%- else -%}
+            {{ log_entry }} returned
+          {%- endif -%}
+        json_attributes_path: "$.data.event_list.[0]"
+        json_attributes:
+          - "fault_status"
+          - "event_id"
+          - "start_timestamp"
+          - "end_timestamp"
+          - "last_updated_at"
+          - "severe_tag"
+          - "event_type"
+          - "fault_type"
+          - "fault_class"
+
+
 
 # -----------------------------------------------------------------------------
 #
@@ -298,10 +355,12 @@ rest:
 
 # Timestamp of the latest energy data.
 # 25-JUN-23 - CHANGED - check for t_stamp is_defined, to energy_consumed is_number.
+# 31-Aug-23 - CHANGED - added "or value_json.data[1].energy_consumed|is_number)" to data check. Also all 
+# other sa_data_by_5min... related sensors that follow. See header notes for more info.
       - name: sa_data_by_5min_time_stamp
         unique_id: sa_data_by_5min_time_stamp
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list | last -%}
               {{- most_recent_sensor_data.t_stamp -}}
           {%- else -%}
@@ -312,7 +371,7 @@ rest:
       - name: sa_data_by_5min_meter_reset
         unique_id: sa_data_by_5min_meter_reset
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list -%}
             {%- if most_recent_sensor_data|count == 1 -%}
               true
@@ -331,7 +390,7 @@ rest:
       - name: sa_data_by_5min_energy_consumed
         unique_id: sa_data_by_5min_energy_consumed
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list | last -%}
               {{- most_recent_sensor_data.energy_consumed 
                   if most_recent_sensor_data.energy_consumed|float(0.0) > 0.0
@@ -343,7 +402,7 @@ rest:
       - name: sa_data_by_5min_energy_generated
         unique_id: sa_data_by_5min_energy_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('energy_generated', 'equalto', None) | list | last -%}
             {{- most_recent_sensor_data.energy_generated 
                 if most_recent_sensor_data.energy_generated|float(0.0) > 0.0
@@ -359,7 +418,7 @@ rest:
       - name: sa_data_by_5min_load_air_conditioner
         unique_id: sa_data_by_5min_load_air_conditioner
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number or value_json.data[1].load_air_conditioner|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('load_air_conditioner', 'equalto', None) | list | last -%}
             {{- most_recent_sensor_data.load_air_conditioner
                 if most_recent_sensor_data.load_air_conditioner|float(0.0) > 0.0
@@ -371,7 +430,7 @@ rest:
       - name: sa_data_by_5min_load_ev_charger
         unique_id: sa_data_by_5min_load_ev_charger
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number or value_json.data[1].load_ev_charger|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('load_ev_charger', 'equalto', None) | list | last -%}
             {{- most_recent_sensor_data.load_ev_charger
                 if most_recent_sensor_data.load_ev_charger|float(0.0) > 0.0
@@ -383,7 +442,7 @@ rest:
       - name: sa_data_by_5min_load_hot_water
         unique_id: sa_data_by_5min_load_hot_water
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number or value_json.data[1].load_hot_water|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('load_hot_water', 'equalto', None) | list | last -%}
             {{- most_recent_sensor_data.load_hot_water
                 if most_recent_sensor_data.load_hot_water|float(0.0) > 0.0
@@ -395,7 +454,7 @@ rest:
       - name: sa_data_by_5min_load_stove
         unique_id: sa_data_by_5min_load_stove
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number or value_json.data[1].load_stove|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('load_stove', 'equalto', None) | list | last -%}
             {{- most_recent_sensor_data.load_stove 
                 if most_recent_sensor_data.load_stove|float(0.0) > 0.0
@@ -413,7 +472,7 @@ rest:
       - name: sa_data_by_5min_energy_consumed_total
         unique_id: sa_data_by_5min_energy_consumed_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'energy_consumed', 'equalto', None ) 
                 | selectattr( 'energy_consumed', 'gt', 0.0 ) 
@@ -426,7 +485,7 @@ rest:
       - name: sa_data_by_5min_energy_generated_total
         unique_id: sa_data_by_5min_energy_generated_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'energy_generated', 'equalto', None ) 
                 | selectattr( 'energy_generated', 'gt', 0.0 ) 
@@ -443,7 +502,7 @@ rest:
       - name: sa_data_by_5min_load_air_conditioner_total
         unique_id: sa_data_by_5min_load_air_conditioner_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number or value_json.data[1].load_air_conditioner|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'load_air_conditioner', 'equalto', None ) 
                 | selectattr( 'load_air_conditioner', 'gt', 0.0 ) 
@@ -456,7 +515,7 @@ rest:
       - name: sa_data_by_5min_load_ev_charger_total
         unique_id: sa_data_by_5min_load_ev_charger_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number or value_json.data[1].load_ev_charger|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'load_ev_charger', 'equalto', None ) 
                 | selectattr( 'load_ev_charger', 'gt', 0.0 ) 
@@ -469,7 +528,7 @@ rest:
       - name: sa_data_by_5min_load_hot_water_total
         unique_id: sa_data_by_5min_load_hot_water_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number or value_json.data[1].load_hot_water|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'load_hot_water', 'equalto', None ) 
                 | selectattr( 'load_hot_water', 'gt', 0.0 ) 
@@ -483,7 +542,7 @@ rest:
       - name: sa_data_by_5min_load_stove_total
         unique_id: sa_data_by_5min_load_stove_total
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number or value_json.data[1].load_stove|is_number) -%}
             {{- value_json.data 
                 | rejectattr( 'load_stove', 'equalto', None ) 
                 | selectattr( 'load_stove', 'gt', 0.0 ) 
@@ -503,7 +562,9 @@ rest:
         unique_id: sa_data_by_5min_imported_total
         value_template: >
           {%- if (value_json is defined) 
-              and (value_json.data[0].energy_consumed|is_number) and (value_json.data[0].energy_generated|is_number) -%}
+              and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) 
+              and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number) 
+            -%}
             {%- set energy = namespace(imported=0.0) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_consumed', 'equalto', None) -%}
               {%- if (sensor_data.energy_consumed|float) > (sensor_data.energy_generated|float) -%}
@@ -524,8 +585,8 @@ rest:
         unique_id: sa_data_by_5min_exported_total
         value_template: >
           {%- if (value_json is defined) 
-              and (value_json.data[0].energy_consumed|is_number) 
-              and (value_json.data[0].energy_generated|is_number) 
+              and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) 
+              and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number)
             -%}
             {%- set energy = namespace( exported = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_generated', 'equalto', None) -%}
@@ -546,12 +607,13 @@ rest:
 # has been generated from local sources (i.e. not imported).
 #
 # 18-May-23 - CHANGED - fixed potential bug in where generated could be -ve. Added float to comparisons and calculations.
+# 11-Sep-23 - CHANGED - changed default value on error from "unavailable" to 0.0.
       - name: sa_data_by_5min_consumed_solar_total
         unique_id: sa_data_by_5min_consumed_solar_total
         value_template: >
           {%- if (value_json is defined) 
-                and (value_json.data[0].energy_consumed|is_number) 
-                and (value_json.data[0].energy_generated|is_number) 
+              and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) 
+              and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number)
             -%}
             {%- set energy = namespace( solar_consumed = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_generated', 'equalto', None) -%}
@@ -570,7 +632,7 @@ rest:
             {%- endfor -%}
             {{- energy.solar_consumed|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_consumed_solar_total.state|default("unavailable") -}}
+            {{- states.sensor.sa_data_by_5min_consumed_solar_total.state|default(0.0) -}}
           {%- endif -%}
 
 #
@@ -581,7 +643,7 @@ rest:
       - name: sa_data_by_5min_load_ev_charger_generated
         unique_id: sa_data_by_5min_load_ev_charger_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number or value_json.data[1].load_ev_charger|is_number) -%}
             {%- set energy = namespace( ev_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_ev_charger', 'equalto', None) -%}
               {%- if sensor_data.load_ev_charger | float > 0.0 -%} 
@@ -613,7 +675,7 @@ rest:
       - name: sa_data_by_5min_load_ev_charger_imported
         unique_id: sa_data_by_5min_load_ev_charger_imported
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number or value_json.data[1].load_ev_charger|is_number) -%}
             {%- set energy = namespace( ev_imported = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_ev_charger', 'equalto', None) -%}
               {%- if sensor_data.load_ev_charger | float > 0.0 -%}
@@ -654,7 +716,7 @@ rest:
       - name: sa_data_by_5min_load_air_conditioner_generated
         unique_id: sa_data_by_5min_load_air_conditioner_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number or value_json.data[1].load_air_conditioner|is_number) -%}
             {%- set energy = namespace( ac_generated = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_air_conditioner', 'equalto', None) -%}
               {%- if sensor_data.load_air_conditioner|float > 0.0 -%} 
@@ -698,7 +760,7 @@ rest:
       - name: sa_data_by_5min_load_air_conditioner_imported
         unique_id: sa_data_by_5min_load_air_conditioner_imported
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number or value_json.data[1].load_air_conditioner|is_number) -%}
             {%- set energy = namespace( ac_imported = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_air_conditioner', 'equalto', None) -%}
               {%- if sensor_data.load_air_conditioner|float > 0.0 -%} 
@@ -748,7 +810,7 @@ rest:
       - name: sa_data_by_5min_load_hot_water_generated
         unique_id: sa_data_by_5min_load_hot_water_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number or value_json.data[1].load_hot_water|is_number) -%}
             {%- set energy = namespace( hw_generated = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_hot_water', 'equalto', None) -%}
               {%- if sensor_data.load_hot_water|float > 0.0 -%} 
@@ -795,7 +857,7 @@ rest:
       - name: sa_data_by_5min_load_hot_water_imported
         unique_id: sa_data_by_5min_load_hot_water_imported
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number or value_json.data[1].load_hot_water|is_number) -%}
             {%- set energy = namespace( hw_imported = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_hot_water', 'equalto', None) -%}
               {%- if sensor_data.load_hot_water|float > 0.0 -%} 
@@ -850,7 +912,7 @@ rest:
       - name: sa_data_by_5min_load_stove_generated
         unique_id: sa_data_by_5min_load_stove_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number or value_json.data[1].load_stove|is_number) -%}
             {%- set energy = namespace( st_generated = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_stove', 'equalto', None) -%}
               {%- if sensor_data.load_stove|float > 0.0 -%} 
@@ -899,7 +961,7 @@ rest:
       - name: sa_data_by_5min_load_stove_imported
         unique_id: sa_data_by_5min_load_stove_imported
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number or value_json.data[1].load_stove|is_number) -%}
             {%- set energy = namespace( st_imported = 0.0, pv_generated = 0.0 ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_stove', 'equalto', None) -%}
               {%- if sensor_data.load_stove|float > 0.0 -%} 
@@ -970,7 +1032,7 @@ rest:
       - name: sa_data_by_5min_history_time_stamp
         unique_id: sa_data_by_5min_history_time_stamp
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_consumed', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -985,7 +1047,7 @@ rest:
       - name: sa_data_by_5min_history_energy_consumed
         unique_id: sa_data_by_5min_history_energy_consumed
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_consumed', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1000,7 +1062,7 @@ rest:
       - name: sa_data_by_5min_history_energy_generated
         unique_id: sa_data_by_5min_history_energy_generated
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_generated|is_number or value_json.data[1].energy_generated|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('energy_generated', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1018,7 +1080,7 @@ rest:
       - name: sa_data_by_5min_history_load_air_conditioner
         unique_id: sa_data_by_5min_history_load_air_conditioner
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_air_conditioner|is_number or value_json.data[1].load_air_conditioner|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_air_conditioner', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1033,7 +1095,7 @@ rest:
       - name: sa_data_by_5min_history_load_ev_charger
         unique_id: sa_data_by_5min_history_load_ev_charger
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_ev_charger|is_number or value_json.data[1].load_ev_charger|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_ev_charger', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1048,7 +1110,7 @@ rest:
       - name: sa_data_by_5min_history_load_hot_water
         unique_id: sa_data_by_5min_history_load_hot_water
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_hot_water|is_number or value_json.data[1].load_hot_water|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_hot_water', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1063,7 +1125,7 @@ rest:
       - name: sa_data_by_5min_history_load_stove
         unique_id: sa_data_by_5min_history_load_stove
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].load_stove|is_number or value_json.data[1].load_stove|is_number) -%}
             {%- set ns = namespace( sensor_values = [] ) -%}
             {%- for sensor_data in value_json.data | rejectattr('load_stove', 'equalto', None) -%}
               {%- if loop.index > (loop.length - 28 ) -%}
@@ -1082,7 +1144,7 @@ rest:
       - name: sa_data_by_5min_history_time_stamp_count
         unique_id: sa_data_by_5min_history_time_stamp_count
         value_template: >
-          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number) -%}
+          {%- if (value_json is defined) and (value_json.data[0].energy_consumed|is_number or value_json.data[1].energy_consumed|is_number) -%}
             {%- set most_recent_sensor_data = value_json['data'] | rejectattr('energy_consumed', 'equalto', None) | list -%}
             {{- most_recent_sensor_data|count -}}
           {%- else -%}
@@ -1525,9 +1587,9 @@ sensor:
               ) | round(4)
             -%}
           {{- most_recent_sensor_data|default(0.0)
-               if (most_recent_sensor_data|float > this.state|float(0.0))
-                   or (states.sensor.sa_data_by_5min_meter_reset.state == 'true')
-               else this.state|default(0.0)
+              if (most_recent_sensor_data|float > this.state|float(0.0))
+                  or (states.sensor.sa_data_by_5min_meter_reset.state == 'true')
+              else this.state|default(0.0)
             -}}
         icon_template: mdi:home-lightning-bolt-outline
         device_class: "energy"
