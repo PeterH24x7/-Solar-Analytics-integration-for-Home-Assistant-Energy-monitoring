@@ -1,6 +1,6 @@
 Solar Analytics Integration for Home Assistant Energy Monitoring
 ================================================================
-Last updated for Version 7.
+Last updated for Release 7.
 
 This is a Solar Analytics public API integration into Home Assistant.
 
@@ -11,7 +11,7 @@ imported power. Lastly, general systems status information is provided.
 
 There are 3 separate instances (files) for the code:
     1. <solar_analytics.yaml> - consumed/generated, imported/exported, and standard load sensors 
-       including electric vehicle, heating-cooling, hot water and stove-oven (where available). Total 
+       including electric vehicle, heating-cooling, hot water and stove-oven (where available). Total
        daily kWh per load only.
     2. <solar_analytics_3phase.yaml> - consumed/generated and imported/exported total daily kWh only. 
        As a basic test, this would also work for single-phase but with no device load sensors.
