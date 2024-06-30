@@ -709,7 +709,7 @@ rest:
 #
 
 #
-### DELETE FOR GITHUB SOLUTION - START >>>>>>>>>>
+### DELETE FOR STANDARD SOLUTION - START >>>>>>>>>>
 #
 # Additional "raw" sensors associated with Heating Cooling broken down by generated 
 # and imported energy sources.
@@ -1015,7 +1015,7 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_stove_imported.state|default("unavailable") -}}
           {%- endif -%}
 #
-### DELETE FOR GITHUB SOLUTION - END <<<<<<<<<<
+### DELETE FOR STANDARD SOLUTION - END <<<<<<<<<<
 #
 
 # 
@@ -1281,6 +1281,7 @@ rest:
           {%- endif -%}
 
 sensor:
+
 
   - platform: template
     sensors:
@@ -1572,7 +1573,7 @@ sensor:
 #
 
 #
-### DELETE FOR GITHUB SOLUTION - START >>>>>>>>>>
+### DELETE FOR STANDARD SOLUTION - START >>>>>>>>>>
 #
       sa_todays_energy_other_total:
         friendly_name: "Todays Energy Other Total"
@@ -1584,6 +1585,8 @@ sensor:
               - states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0)
               - states.sensor.sa_data_by_5min_load_hot_water_total.state|float(0.0)
               - states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0)
+              
+
               ) | round(4)
             -%}
           {{- most_recent_sensor_data|default(0.0)
@@ -2047,7 +2050,7 @@ sensor:
         attribute_templates:
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 #
-### DELETE FOR GITHUB SOLUTION - END <<<<<<<<<<
+### DELETE FOR STANDARD SOLUTION - END <<<<<<<<<<
 #
 
 # -----------------------------------------------------------------------------
