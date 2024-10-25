@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 8 <<< STANDARD SOLUTION
+# >>> RELEASE 8- <<< STANDARD SOLUTION
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 # 
@@ -219,7 +219,7 @@ automation:
     trigger:
     - platform: time_pattern
       seconds: "/10"
-    condition: "{{ ( (now().minute + 2) is divisibleby(5) ) and ( ( (now().second // 10) + (states('input_text.sa_site_id')|int % 6) ) == 5 ) }}"
+    condition: "{{ ( (now().minute + 2) is divisibleby(5) ) and ( ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) }}"
     action:
       - service: homeassistant.update_entity
         data: {}
@@ -234,7 +234,7 @@ automation:
     trigger:
     - platform: time_pattern
       seconds: "/5"
-    condition: "{{- ( (now().second // 10) >= 3 ) and ( (now().second // 5) + (states('input_text.sa_site_id')|int % 6) == 11 ) -}}" 
+    condition: "{{- ( (now().second // 10) >= 3 ) and ( (now().second // 5) + (states('input_text.sa_site_id')|int(0) % 6) == 11 ) -}}" 
     action:
       - service: homeassistant.update_entity
         data: {}
@@ -250,7 +250,7 @@ automation:
     - platform: time_pattern
       minutes: "11"
       seconds: "/10"
-    condition: "{{ ( (now().second // 10) + (states('input_text.sa_site_id')|int % 6) ) == 5 }}"
+    condition: "{{ ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 }}"
     action:
       - service: homeassistant.update_entity
         data: {}
