@@ -333,7 +333,7 @@ rest:
   #
   # Solar Analytics - get the site status for the specified site_id.
   # Updated every hour.
-  - resource_template: https://portal.solaranalytics.com.au/api/v3/site_status/{{-
+  - resource_template: https://portal.solaranalytics.com.au/api/v4/site_status/{{-
       states('input_text.sa_site_id') 
       -}}
     headers: 
@@ -353,6 +353,10 @@ rest:
           - "mer_percentage"
           - "mer_status"
           - "mer_text"
+          - "fault_exists"
+          - "fault_type"
+          - "fault_class"
+          - "event_type"
 
   #
   # Solar Analytics - get the site fault status for the specified site_id.
