@@ -33,7 +33,7 @@ INSTALLATION - NEW:
 #   9. Enjoy!
 
 UPGRADING - FROM A PREVIOUS VERSION:
-#   This upgrade should not break the sensors created in a previous versions. It's recommended that the 
+#   This release should not break the sensors created in a previous releases. It's recommended that the 
 #   previous version solar_analytics.yaml should be deleted/renamed, HA restarted, the new solar_analytics.yaml
 #   copied to the <config> folder and then HA restarted again. The sensors should start repopulating
 #   within their refresh timecycles. If any duplicate sensors happen to be created, go to HA Settings ->
@@ -42,6 +42,5 @@ UPGRADING - FROM A PREVIOUS VERSION:
 #   to normal. Alternatively go to 'Developer Tools -> Services' and select 'Recorder: Purge Entities' 
 #   and then 'Choose entity' and select all the "sa_..." entities needing to purge immediately.
 
- 
 If you find my work useful, please buy me a coffee ... thank you!
    https://www.buymeacoffee.com/peter24x7
