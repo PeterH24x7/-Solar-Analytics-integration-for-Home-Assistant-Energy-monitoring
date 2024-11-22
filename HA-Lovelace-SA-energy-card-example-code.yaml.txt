@@ -1,7 +1,5 @@
 type: vertical-stack
 cards:
-  - type: markdown
-    content: '## Energy Costs'
   - type: horizontal-stack
     cards:
       - show_name: true
@@ -9,7 +7,7 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.sa_import_export_power
+        entity: sensor.nr_cs_import_export_power_kilo_watts
         show_state: true
         name: Power
         hold_action:
@@ -20,7 +18,7 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.your_retailer_general_price
+        entity: sensor.amber12ayrst_general_price
         show_state: true
         name: Rate
         hold_action:
@@ -31,23 +29,12 @@ cards:
         type: button
         tap_action:
           action: more-info
-        entity: sensor.your_retailer_feed_in_price
+        entity: sensor.amber12ayrst_feed_in_price
         name: FIT
         show_state: true
         hold_action:
           action: navigate
           navigation_path: /a0d7b954_grafana
-      - show_name: true
-        show_icon: false
-        type: button
-        tap_action:
-          action: more-info
-        entity: sensor.nr_pv_output
-        name: PV Limit
-        show_state: true
-        hold_action:
-          action: navigate
-          navigation_path: /lovelace/pv
   - type: horizontal-stack
     cards:
       - show_name: true
@@ -60,7 +47,7 @@ cards:
         entity: sensor.sa_todays_energy_imported
         hold_action:
           action: navigate
-          navigation_path: /lovelace/energy_price
+          navigation_path: /lovelace/kwh
       - show_name: true
         show_icon: false
         type: button
@@ -71,7 +58,7 @@ cards:
         name: Av. Rate
         hold_action:
           action: navigate
-          navigation_path: /lovelace/energy_price 
+          navigation_path: /lovelace/energy_price
       - show_name: true
         show_icon: false
         type: button
@@ -93,7 +80,7 @@ cards:
         name: Export
         hold_action:
           action: navigate
-          navigation_path: /lovelace/energy_price
+          navigation_path: /lovelace/kwh
   - type: horizontal-stack
     cards:
       - show_name: true
@@ -129,6 +116,91 @@ cards:
         hold_action:
           action: navigate
           navigation_path: /lovelace/energy_price
+  - type: custom:apexcharts-card
+    graph_span: 24h
+    show:
+      last_updated: true
+    now:
+      show: true
+      label: now
+    span:
+      start: hour
+    header:
+      show: true
+      title: Amber F/cast $/kWh & Renewables %
+      show_states: false
+      colorize_states: true
+    apex_config:
+      chart:
+        height: 245px
+    series:
+      - entity: sensor.amber_forecast
+        name: General Rate
+        color: brown
+        float_precision: 2
+        stroke_width: 3
+        data_generator: |
+          return entity.attributes.times.map((time, index) => {
+            return [new Date(time).getTime(), entity.attributes.general_price[index]];
+          })
+        show:
+          legend_value: false
+          extremas: true
+        yaxis_id: left
+      - entity: sensor.amber_forecast
+        name: FIT Price
+        color: yellow
+        float_precision: 2
+        stroke_width: 3
+        data_generator: |
+          return entity.attributes.times.map((time, index) => {
+            return [new Date(time).getTime(), entity.attributes.fit_price[index]];
+          }) 
+        show:
+          legend_value: false
+          extremas: true
+        yaxis_id: left
+      - entity: sensor.amber_forecast
+        name: Renewables %
+        color: green
+        float_precision: 2
+        stroke_width: 2
+        data_generator: |
+          return entity.attributes.times.map((time, index) => {
+            return [new Date(time).getTime(), entity.attributes.renewables_percent[index]];
+          }) 
+        show:
+          legend_value: false
+          extremas: true
+        yaxis_id: right
+        unit: "%"
+      - entity: sensor.nr_price_high
+        name: Limit Max
+        color: black
+        float_precision: 2
+        stroke_width: 1
+        yaxis_id: left
+      - entity: sensor.nr_price_high_ev
+        name: EV Limit Max
+        color: orange
+        float_precision: 2
+        stroke_width: 1
+        show:
+          legend_value: true
+        yaxis_id: left
+    yaxis:
+      - id: left
+        decimals: 2
+        min: ~-0.2
+        max: ~0.8
+        apex_config:
+          tickAmount: 5
+      - id: right
+        decimals: 0
+        min: 0
+        max: 100
+        opposite: true
+        show: true
   - type: horizontal-stack
     cards:
       - show_name: true
@@ -151,3 +223,14 @@ cards:
         name: Generated
         hold_action:
           action: none
+      - show_name: true
+        show_icon: false
+        type: button
+        tap_action:
+          action: more-info
+        entity: sensor.amber12ayrst_renewables
+        name: Grid
+        show_state: true
+        hold_action:
+          action: none
+
