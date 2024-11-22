@@ -1,15 +1,15 @@
 Solar Analytics Integration for Home Assistant Energy Monitoring
 ================================================================
-Last updated for Release 7.
+Last updated for Release 8. See comments in the code for the release notes.
 
 This is a Solar Analytics public API integration into Home Assistant.
 
-In summary, the solution provides daily cumulative consumed/generated, exported/imported energy (Wh) 
+The solution provides daily cumulative consumed/generated, exported/imported energy (Wh) 
 and various load energy (where applicable). These sensors can be configured to work with the Home Assistant 
 Energy Monitoring capability. There are also 1-minute power sensors for consumed/generated and exported/
 imported power. Lastly, general systems status information is provided.
 
-There are 3 separate instances (files) for the code:
+There are 3 separate instances (yaml files) for the code:
     1. <solar_analytics.yaml> - consumed/generated, imported/exported, and standard load sensors 
        including electric vehicle, heating-cooling, hot water and stove-oven (where available). Total
        daily kWh per load only.
@@ -18,7 +18,7 @@ There are 3 separate instances (files) for the code:
     3. <solar_analytics_advanced.yaml> - load sensors as above, additionally broken down by total daily 
        kWh sourced from generated or imported sources, including % generated.
 
-Included sensors as follows - see Solar_Analytics_sensors_notes_v7-30Jun24.xlsx/pdf for details:
+Included sensors as follows - see solar_analytics_sensors_notes_v8-12Oct24.xlsx/pdf for details:
     1. Solar Analytics portal, system and solar PV performance status. 
     2. Daily cumulative 5-minute energy Watt-hours per available channel, including:
         a. Consumed (energy_consumed) and generated (energy_generated) energy. 
@@ -35,7 +35,7 @@ Included sensors as follows - see Solar_Analytics_sensors_notes_v7-30Jun24.xlsx/
            hot water or stove-oven. 
            Only for <solar_analytics_advanced.yaml> instance.
     3. Generated expected energy to the hour within the day (as estimated by Solar Analytics). 
-    4. 1-minute power Watts reporting of consumed/generated and import-exported power.
+    4. 1-minute power average Watts reporting of consumed/generated and import-exported power.
     5. Where costs are configured in the HA Energy Monitoring (fixed, peak/off-peak/shoulder, spot market 
        - e.g. Amber) there are sensors for: 
          > Cumulative daily net cost ($).
@@ -51,7 +51,7 @@ production" via the HA Energy configuration page. The individual energy channels
 load_air_conditioner, load_stove) can also be added to the HA Energy Manager as "Monitor Individual Devices". 
 Go to HA settings and search for “Energy Configuration” to make the changes. 
 
-Set-up and updates from previous releases involve the installation of a stand-alone file included as a package 
+Set-up and updates from previous releases involve the installation of a stand-alone file listed as a package 
 in the configuration.yaml file - see the <solar_analytics.yaml> file for instructions. To upgrade from a 
 previous version, please read the instructions in the code header text.
 
