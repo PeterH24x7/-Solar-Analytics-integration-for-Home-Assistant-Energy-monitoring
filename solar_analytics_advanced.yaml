@@ -1,13 +1,24 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 8- <<< ADVANCED SOLUTION
+# >>> RELEASE 9 FINAL <<< SOLAR_ANALYTICS_ADVANCED.YAML SOLUTION
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
+#
+# Configurations:
+#                 - solar_analytics_3phase.yaml - consumed and generated sensors only.
+#                 - solar_analytics_battery.yaml [NEW 27-Jan-25] - includes consumed, generated
+#                     and battery sensors.
+#                 - solar_analytics.yaml - consumed and generaged, plus load sensors for 
+#                     hot_water, air_conditioner, ev_charger and stove.
+#                     Note: other known, but not implemented, SA load types include load_lighting
+#                     load_tenant and load_garage.
+#     [THIS FILE] - solar_analytics_advanced.yaml - sensors as per solar_analytics, plus
+#                     load energy broken into imported and generated sources.
 # 
 # Developed by Peter Hormann and with thanks to Glen S and Roving-Ronin for their contributions.
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 12-Oct-24 as Release 8 - see update notes below.
+# Last updated: 30-Jan-25 as Release 9 FINAL - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -87,7 +98,7 @@
 #                   energy_generated, energy_consumed etc.
 #                 - Added new sensor sa_status_log_entry that gets the site fault status (if not okay). 
 #                   Fault related details are in the sensor attributes.
-#       12-Oct-24 - RELEASE 8
+#       12-Oct-24 - RELEASE 8--
 #                 - Updated code comments as applicable. Deleted old dated commentary.
 #                 - Fixes to improve error checking for value_json.data and unexpected null values.
 #                   Refer Github issue "Periods of offline aren't handled well in the 5min sensors" raised 
@@ -96,37 +107,38 @@
 #                   sa_data_by_hour_trigger to optimise the timing of the respective data gets which
 #                   otherwise start arbitrarily on restart/reload. To avoid mini get-storms resulting
 #                   from this code, the gets are distributed at appropriate intervals.
+#                 - Updated site_status get with extra attributes (per @aaronpowell).
+#       30-Jan-25 - RELEASE 9 - MINOR ADDITION TO HISTORY SENSOR ONLY.
+#                 - Added new history sensor - sa_data_by_5min_history_imported_exported. Included as
+#                   new attribute in sa_todays_energy_history. 
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
 # 
 # INSTALLATION - NEW: 
-#   1. Copy this yaml file to the HA config directory.
+#   1. Copy this yaml file to the Home Assistant (HA) config folder.
 #   2. Include this file name as a package in the HA configuration.yaml. 
 #      For example -
 #        packages:
 #          pack_1: !include solar_analytics.yaml
 #   3. Define sa_username, sa_password and sa_site_id (e.g. 36304) in the secrets.yaml file (see
 #      example on github).
-#   4. Using HA Developer Tools check the configuration and restart.  From States, review the 
-#      attributes for sa_data_by_5min to identify the device specific channel names and 
-#      update/delete the sa_todays_... xyz sensors to suit.
-#   5. Add the new energy sensors from 4. above to the HA Energy Manager as "Monitor 
-#      Individual Devices". Go to HA Settings and then search for “Energy Configuration” 
-#      to make the changes.
-#   6. Also in HA Energy Configuration, enter the details for
+#   4. Using HA Developer Tools check the configuration and restart.   
+#   5. Go to HA Settings and then search for “Energy Configuration” to make the changes to the Energy 
+#      Dashboard Configuration. #nter the details for:
 #      > Grid consumption - as sa_todays_energy_imported
 #      > Return to grid - as sa_todays_energy_exported
 #      > Solar production - as sa_todays_energy_generated_total
-#   7. If all working is correctly, the Energy dashboard should start populating data within 
+#   6. Add the energy load sensors to the HA Energy Dashboard as "Monitor Individual Devices".
+#   7. If all is working is correctly, the Energy Dashboard should start populating data within 
 #      a couple of hours.
-#   8. If HA EM "Grid Consumption" and "Return to grid" are configured with energy pricing 
+#   8. If the HA Dashboard "Grid Consumption" and "Return to grid" are configured with energy unit pricing 
 #      details, then the sa_todays_energy_imported_cost and sa_todays_energy_exported_compensation sensors 
-#      should be auto-created by the Energy Manager. These sensors can be found as hidden Entities 
+#      will be auto-created by the Energy Dashboard. These sensors can be found as hidden Entities 
 #      (which can't be changed or deleted). If all good, then the sa_todays_energy_import_rate 
 #      (daily av. $/kWh), sa_todays_energy_export_rate (daily av. $/kWh) and
 #      sa_todays_energy_total_net_cost ($) should work without further config. If no pricing 
-#      is set, then delete these 3x sensors from the configuration.
+#      is set, then optionally delete these 3x sensors from the configuration.
 #   9. Enjoy!
 #
 # UPGRADING - FROM A PREVIOUS VERSION:
@@ -211,7 +223,6 @@ automation:
         entity_id: sensor.sa_auth_token
     mode: single
 
-  ### START NEW CODE 12-Oct-24 >>>>
   # Automated trigger for sa_data_by_5min_... sensors - fires every 5 minutes. 
   - id: 'sa_data_by_5min_trigger'
     alias: SA Data by 5min Trigger
@@ -257,7 +268,6 @@ automation:
         target:
           entity_id: sensor.sa_data_by_hour_time_stamp
     mode: single
-  ### END NEW CODE 12-Oct-24 <<<<
 
   # Home Assistant start-up and optional manual trigger to refresh all SA get sensors.
   - id: 'sa_refresh_all_rest_gets'
@@ -301,7 +311,7 @@ rest:
 
   #
   # Solar Analytics - get the site details associated with the given user account login.
-  # Updated every 24 hours.
+  # Updated every hour.
   #
   # Note: assumes only a single device per account, there could be a second device (e.g. replaced 
   # device due to fault/upgrade) at $.data.[1]
@@ -309,7 +319,7 @@ rest:
     headers: 
       Authorization: >-
         {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
-    scan_interval: 062400
+    scan_interval: 3600
     sensor:
       - name: sa_site_list
         unique_id: sa_site_list
@@ -333,6 +343,11 @@ rest:
   #
   # Solar Analytics - get the site status for the specified site_id.
   # Updated every hour.
+  #
+  # 30-Oct-24 - extra attributes - not always available. 
+  #   Decided against use of unsupported v4 (not in public API, reporting showed 
+  #   some inconsistency w/ v3).
+  #
   - resource_template: https://portal.solaranalytics.com.au/api/v3/site_status/{{-
       states('input_text.sa_site_id') 
       -}}
@@ -347,12 +362,19 @@ rest:
         json_attributes_path: "$.data"
         json_attributes:
           - "dashboard_status"
-          - "event_id"
-          - "event_list"
-          - "fault_status"
-          - "mer_percentage"
           - "mer_status"
           - "mer_text"
+          - "mer_percentage"
+
+          - "fault_status"
+          - "fault_type"
+          - "fault_text"
+
+          - "action_type"
+          - "action_text"
+
+          - "event_id"
+          - "event_list"
 
   #
   # Solar Analytics - get the site fault status for the specified site_id.
@@ -407,7 +429,6 @@ rest:
   # energy as used by the HA Energy module.
   # Updated every 5 minutes.
   #
-  ### MODIFIED 12-Oct-24 - NOW UPDATED VIA sa_data_by_5min_trigger - SCAN INTERVAL IS 0.
   - resource_template: https://portal.solaranalytics.com.au/api/v2/site_data/{{-
       states('input_text.sa_site_id') 
       -}}?all=true&gran=minute&trunc=false&power=false&tstart={{-
@@ -426,7 +447,6 @@ rest:
       # Timestamp of the latest energy data.
       # Return values: latest time stamp if available, else "unavailable".
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_time_stamp
         unique_id: sa_data_by_5min_time_stamp
         value_template: >-
@@ -446,7 +466,6 @@ rest:
       # Should only occur at midnight each day, but may also occur if there are no recordings early in the day.
       # Return values: non-boolean "False" if not reset, "True" if reset. Returns "unavailable" if no data.
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_meter_reset
         unique_id: sa_data_by_5min_meter_reset
         value_template: >-
@@ -464,12 +483,12 @@ rest:
         json_attributes_path: "$.data[0]"
         json_attributes: "t_stamp"
 
+
       # The last 5 minutes energy by sensor type per Solar Analytics channel. 
       # These sensors may be useful for calculating energy cost where energy costs vary at intervals down 
       # to 5 minutes (e.g. Amber Electric). The may also be useful for configuring "Utility Meter" helpers in HA.
       # Return values: numeric if available, else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_energy_consumed
         unique_id: sa_data_by_5min_energy_consumed
         value_template: >-
@@ -491,7 +510,6 @@ rest:
             unavailable
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_energy_generated
         unique_id: sa_data_by_5min_energy_generated
         value_template: >-
@@ -516,7 +534,6 @@ rest:
 #
 ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
 #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_air_conditioner
         unique_id: sa_data_by_5min_load_air_conditioner
         value_template: >-
@@ -538,7 +555,6 @@ rest:
             unavailable
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_ev_charger
         unique_id: sa_data_by_5min_load_ev_charger
         value_template: >-
@@ -560,7 +576,6 @@ rest:
             unavailable
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_hot_water
         unique_id: sa_data_by_5min_load_hot_water
         value_template: >-
@@ -582,7 +597,6 @@ rest:
             unavailable
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_stove
         unique_id: sa_data_by_5min_load_stove
         value_template: >-
@@ -611,7 +625,6 @@ rest:
       # These sensors are used for feeding "fully configured" template sensors defined further down below.
       # Return values: numeric if available, else previous value else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_energy_consumed_total
         unique_id: sa_data_by_5min_energy_consumed_total
         value_template: >-
@@ -627,7 +640,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_energy_consumed_total.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_energy_generated_total
         unique_id: sa_data_by_5min_energy_generated_total
         value_template: >-
@@ -646,7 +658,6 @@ rest:
 #
 ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
 #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_air_conditioner_total
         unique_id: sa_data_by_5min_load_air_conditioner_total
         value_template: >-
@@ -662,7 +673,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_air_conditioner_total.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_ev_charger_total
         unique_id: sa_data_by_5min_load_ev_charger_total
         value_template: >-
@@ -678,7 +688,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_ev_charger_total.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_hot_water_total
         unique_id: sa_data_by_5min_load_hot_water_total
         value_template: >-
@@ -694,7 +703,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_hot_water_total.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_stove_total
         unique_id: sa_data_by_5min_load_stove_total
         value_template: >-
@@ -717,7 +725,6 @@ rest:
       # These sensors are derived/calculated from the main Solar Analytics channels.
       # Return values: numeric if available, else previous value else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_imported_total
         unique_id: sa_data_by_5min_imported_total
         value_template: >-
@@ -740,7 +747,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_energy_imported_total.state|default("unavailable") -}} 
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_exported_total
         unique_id: sa_data_by_5min_exported_total
         value_template: >-
@@ -763,7 +769,6 @@ rest:
       # has been generated from local sources (i.e. not imported).
       # Return values: numeric if available, else previous value else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_consumed_solar_total
         unique_id: sa_data_by_5min_consumed_solar_total
         value_template: >-
@@ -795,7 +800,6 @@ rest:
       # and imported energy sources.
       # Return values: numeric if available, else previous value else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_ev_charger_generated
         unique_id: sa_data_by_5min_load_ev_charger_generated
         value_template: >-
@@ -823,7 +827,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_ev_charger_generated.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_ev_charger_imported
         unique_id: sa_data_by_5min_load_ev_charger_imported
         value_template: >-
@@ -862,7 +865,6 @@ rest:
       # Additional "raw" sensors associated with Heating Cooling broken down by generated 
       # and imported energy sources.
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_air_conditioner_generated
         unique_id: sa_data_by_5min_load_air_conditioner_generated
         value_template: >-
@@ -902,7 +904,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_air_conditioner_generated.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_air_conditioner_imported
         unique_id: sa_data_by_5min_load_air_conditioner_imported
         value_template: >-
@@ -949,7 +950,6 @@ rest:
       # Additional "raw" sensors associated with Hot Water broken down by generated 
       # and imported energy sources.
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_hot_water_generated
         unique_id: sa_data_by_5min_load_hot_water_generated
         value_template: >-
@@ -992,7 +992,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_hot_water_generated.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_hot_water_imported
         unique_id: sa_data_by_5min_load_hot_water_imported
         value_template: >-
@@ -1044,7 +1043,6 @@ rest:
       # Additional "raw" sensors associated with Stove Oven usage broken down by generated 
       # and imported energy sources.
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_stove_generated
         unique_id: sa_data_by_5min_load_stove_generated
         value_template: >-
@@ -1089,7 +1087,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_load_stove_generated.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_load_stove_imported
         unique_id: sa_data_by_5min_load_stove_imported
         value_template: >-
@@ -1156,7 +1153,6 @@ rest:
       #
       # Return values: numeric list if available, else previous numeric list else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_time_stamp
         unique_id: sa_data_by_5min_history_time_stamp
         value_template: >-
@@ -1178,7 +1174,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_time_stamp.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_energy_consumed
         unique_id: sa_data_by_5min_history_energy_consumed
         value_template: >-
@@ -1204,7 +1199,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_energy_consumed.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_energy_generated
         unique_id: sa_data_by_5min_history_energy_generated
         value_template: >-
@@ -1230,10 +1224,41 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_energy_generated.state|default("unavailable") -}}
           {%- endif -%}
 
+# ADDED 27-JAN-25
+      - name: sa_data_by_5min_history_imported_exported
+        unique_id: sa_data_by_5min_history_imported_exported
+        value_template: >-
+          {%- if (value_json.data is defined) -%}
+            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if sensor_data.energy_consumed is number -%}
+                {%- set ns.last_data = loop.index -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
+                {%- if (sensor_data.energy_consumed is number) -%}
+                  {%- set ns.sensor_values = ns.sensor_values 
+                      + [ ( ( sensor_data.energy_consumed|float 
+                              + sensor_data.battery_storage|default(0.0)|float
+                              - sensor_data.energy_generated|default(0.0)|float
+                            ) * 12.0 / 1000
+                          )|round(2) 
+                        ] 
+                    -%}
+                {%- else -%}
+                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.sensor_values -}}
+          {%- else -%}
+            {{- states.sensor.sa_data_by_5min_history_imported_exported.state|default("unavailable") -}}
+          {%- endif -%}
+
 #
 ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
 #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_load_air_conditioner
         unique_id: sa_data_by_5min_history_load_air_conditioner
         value_template: >-
@@ -1259,7 +1284,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_load_air_conditioner.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_load_ev_charger
         unique_id: sa_data_by_5min_history_load_ev_charger
         value_template: >-
@@ -1285,7 +1309,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_load_ev_charger.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_load_hot_water
         unique_id: sa_data_by_5min_history_load_hot_water
         value_template: >-
@@ -1311,7 +1334,6 @@ rest:
             {{- states.sensor.sa_data_by_5min_history_load_hot_water.state|default("unavailable") -}}
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_load_stove
         unique_id: sa_data_by_5min_history_load_stove
         value_template: >-
@@ -1343,7 +1365,6 @@ rest:
       # A count of the number of time intervals since midnight. Used to calculate a long date/time
       # value for sa_todays_energy_history.
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_5min_history_time_stamp_count
         unique_id: sa_data_by_5min_history_time_stamp_count
         value_template: >-
@@ -1366,8 +1387,6 @@ rest:
   # Solar Analytics - get live per minute power data.
   # Used to generate most recent power information.
   # 
-  ### MODIFIED 12-Oct-24 - NOW UPDATED VIA sa_live_site_data_trigger - SCAN INTERVAL IS 0.
-  #
   # Note: this is not a published API 'get', but is used by the SA portal to display minute to 
   # minute power for a site.
   #
@@ -1385,7 +1404,6 @@ rest:
       # Timestamp of the latest power data.
       # Return values: latest time stamp if available, else "unavailable".
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_live_site_data_time_stamp
         unique_id: sa_live_site_data_time_stamp
         value_template: >-
@@ -1406,7 +1424,6 @@ rest:
       # Minutely updated "raw" power sensors as provided by Solar Analytics.
       # Return values: numeric if available, else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_live_site_data_consumed
         unique_id: sa_live_site_data_consumed
         value_template: >-
@@ -1424,7 +1441,6 @@ rest:
             unavailable
           {%- endif -%}
 
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_live_site_data_generated
         unique_id: sa_live_site_data_generated
         value_template: >-
@@ -1447,7 +1463,6 @@ rest:
       # the grid (exported).
       # Return values: numeric if available, else "unavailable"
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_live_site_data_imported_exported
         unique_id: sa_live_site_data_imported_exported
         value_template: >-
@@ -1503,7 +1518,6 @@ rest:
       # Total Energy Generated Expected
       # Return values: numeric if available and positive, else 0.0 if negative, else "unavailable".
       #
-      ### UPDATED 12-OCT-24 TO IMPROVE ERROR CHECKING FOR NULL VALUES ###
       - name: sa_data_by_hour_generated_expected
         unique_id: sa_data_by_hour_generated_expected
         value_template: >-
@@ -1528,7 +1542,7 @@ rest:
 # SENSORS
 sensor:
 
-  # TEMPATE SENSORS
+  # TEMPLATE SENSORS
   - platform: template
     sensors:
 
@@ -1814,7 +1828,6 @@ sensor:
 #
 ### DELETE FOR STANDARD SOLUTION - START >>>>>>>>>>
 #
-      ### NEW 21-SEP-24 - ADDED television2_energy_today and workshop_backyard_energy_today ###
       sa_todays_energy_other_total:
         friendly_name: "Todays Energy Other Total"
         unique_id: sa_todays_energy_other_total
@@ -1825,29 +1838,6 @@ sensor:
               - states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0)
               - states.sensor.sa_data_by_5min_load_hot_water_total.state|float(0.0)
               - states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0)
-
-              - (states.sensor.all_lights_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.all_lights_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.washing_machine_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.washing_machine_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.television_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.television_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.television2_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.television2_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.workshop_backyard_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.workshop_backyard_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.refridgerator_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.refridgerator_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-              - (states.sensor.water_pump_energy_today.state|float(0.0) * 1000.0
-                  if states.sensor.water_pump_energy_today.state|float(0.0) < 10.0 
-                  else 0.0)
-
               ) | round(4)
             -%}
           {{- most_recent_sensor_data|default(0.0)
@@ -2462,6 +2452,10 @@ sensor:
           energy_generated: >
             {{- states.sensor.sa_data_by_5min_history_energy_generated.state -}}
 
+# ADDED 27-JAN-25
+          energy_imported_exported: >
+            {{- states.sensor.sa_data_by_5min_history_imported_exported.state -}}
+
 #
 ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
 #
@@ -2526,14 +2520,13 @@ sensor:
           state_class: "measurement"
           time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
-
 #
-# Home Assistant Energy Management extras
+# Home Assistant Energy Dashboard extras
 #
       #
       # Todays Energy Total Net Cost
       #
-      # HA EM automatically creates two entities respectively derived from the sa_todays_energy_imported 
+      # The HA Energy Dashboard automatically creates two entities respectively derived from the sa_todays_energy_imported 
       # and sa_todays_energy_exported, where:
       #   > sa_todays_energy_imported_cost - cost of imported energy
       #   > sa_todays_energy_exported_compensation - revenue from exported energy
@@ -2560,13 +2553,13 @@ template:
   #
   # Todays Energy Import Rate
   #
-  # Useful for those on a variable electricity import/general rate configured in the HA Energy Manager 
+  # Useful for those on a variable electricity import/general rate configured in the HA Energy Dashboard 
   # (e.g. peak/off-peak/shoulder, Amber Energy wholesale spot market pricing). The average import 
   # rate $/kWh = cumulative exported energy kWh divided by the cumulative imported energy revenue $. 
   # Resets to zero at midnight. The sensor sa_todays_energy_imported_cost is created by the 
-  # HA Energy Manager when appropriate pricing is set-up for energy drawn from the grid.
+  # HA Energy Dashboard when appropriate pricing is set-up for energy drawn from the grid.
   #
-  # Defaults to previous value when the imported total Wh is < 100 (changed 29-Jul-23).
+  # Defaults to previous value when the imported total Wh is < 100.
   - trigger:
     - platform: state
       entity_id: sensor.sa_todays_energy_imported_cost
@@ -2598,13 +2591,13 @@ template:
   #
   # Todays Energy Export Rate
   #
-  # Useful for those on a variable electricity feed-in (FIT) rate configured in the HA Energy Manager 
+  # Useful for those on a variable electricity feed-in (FIT) rate configured in the HA Energy Dashboard 
   # (e.g. peak/off-peak/shoulder, Amber Energy wholesale spot market pricing). The average export 
   # rate $/kWh = cumulative exported energy kWh divided by the cumulative exported energy revenue $. 
   # Resets to zero at midnight. The sensor sa_todays_energy_exported_compensation is created by the 
-  # HA Energy Manager when appropriate pricing is set-up for energy returned to the grid. 
+  # HA Energy Dashboard when appropriate pricing is set-up for energy returned to the grid. 
   #
-  # Defaults to previous value when the imported total Wh is < 100 (changed 29-Jul-23).
+  # Defaults to previous value when the imported total Wh is < 100.
   - trigger:
     - platform: state
       entity_id: sensor.sa_todays_energy_exported_compensation
