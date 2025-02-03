@@ -1,0 +1,19 @@
+type: entities
+title: Today's Imported and Exported kWh
+entities:
+  - entity: sensor.sa_data_by_5min_time_stamp
+    icon: mdi:clock-end
+    secondary_info: last-updated
+    name: Time Stamp
+  - entity: sensor.sa_todays_energy_imported
+    name: IMPORTED =
+  - entity: sensor.sa_todays_energy_consumed_home_imported_total
+    name: + Consumed (imported)
+  - entity: sensor.sa_todays_battery_storage_in_imported
+    name: + Battery In (imported)
+  - entity: sensor.sa_todays_energy_exported
+    name: EXPORTED =
+  - entity: sensor.sa_todays_battery_storage_out_exported
+    name: + Battery Out (exported)
+  - entity: sensor.sa_todays_energy_exported_generated
+    name: + Generated (exported)

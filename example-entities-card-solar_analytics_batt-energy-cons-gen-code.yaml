@@ -1,0 +1,30 @@
+title: Today's Consumed & Generated kWh
+type: entities
+entities:
+  - entity: sensor.sa_data_by_5min_time_stamp
+    icon: mdi:clock-end
+    secondary_info: last-updated
+    name: Time Stamp
+  - entity: sensor.sa_todays_energy_consumed_total
+    icon: mdi:home-lightning-bolt-outline
+    name: CONSUMED + BATTERY IN/OUT =
+  - entity: sensor.sa_todays_energy_consumed_home_total
+    name: HOUSEHOLD CONSUMED =
+  - entity: sensor.sa_todays_energy_consumed_solar
+    name: + Generated
+  - entity: sensor.sa_todays_battery_storage_out_consumed
+    name: + Battery Out (consumed)
+  - entity: sensor.sa_todays_energy_consumed_home_imported_total
+    name: + Imported (consumed)
+  - entity: sensor.sa_todays_energy_generated_total
+    icon: mdi:solar-power
+    name: SOLAR GENERATED =
+  - entity: sensor.sa_todays_energy_consumed_solar
+    name: + Consumed
+  - entity: sensor.sa_todays_battery_storage_in_generated
+    name: + Battery In (generated)
+  - entity: sensor.sa_todays_energy_exported_generated
+    name: + Exported (generated)
+  - entity: sensor.sa_todays_energy_generated_expected_total
+    name: < Expected
+    secondary_info: none

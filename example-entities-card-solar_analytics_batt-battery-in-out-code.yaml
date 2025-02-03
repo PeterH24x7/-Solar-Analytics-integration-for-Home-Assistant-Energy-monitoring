@@ -1,0 +1,23 @@
+type: entities
+title: Today's Battery In & Out kWh
+entities:
+  - entity: sensor.sa_data_by_5min_time_stamp
+    icon: mdi:clock-end
+    secondary_info: last-updated
+    name: Time Stamp
+  - entity: sensor.sa_todays_battery_storage_in_total
+    name: BATTERY INPUT =
+  - entity: sensor.sa_todays_battery_storage_in_imported
+    name: + Imported
+  - entity: sensor.sa_todays_battery_storage_in_generated
+    name: + Generated
+  - entity: sensor.sa_todays_battery_storage_in_generated_percentage
+    name: < Generated %
+  - entity: sensor.sa_todays_battery_storage_out_total
+    name: BATTERY OUTPUT =
+  - entity: sensor.sa_todays_battery_storage_out_consumed
+    name: + Consumed
+  - entity: sensor.sa_todays_battery_storage_out_exported
+    name: + Exported
+  - entity: sensor.sa_todays_battery_storage_out_consumed_percentage
+    name: < Consumed %
