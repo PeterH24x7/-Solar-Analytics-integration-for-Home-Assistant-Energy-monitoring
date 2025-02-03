@@ -1,0 +1,58 @@
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Todays Energy Source (kWh)
+  show_states: true
+  colorize_states: true
+chart_type: donut
+all_series_config:
+  unit: " "
+  float_precision: 0
+show:
+  last_updated: true
+series:
+  - entity: sensor.sa_todays_consumed_generated_percentage
+    name: Consumed PV
+    color: "#FFD801"
+    unit: "%"
+    show:
+      legend_value: false
+      in_header: true
+      in_chart: false
+  - entity: sensor.amber12ayrst_renewables
+    name: Grid
+    color: brown
+    unit: "%"
+    show:
+      legend_value: false
+      in_header: true
+      in_chart: false
+  - entity: sensor.sa_todays_generated_consumed_percentage
+    name: PV Consumed
+    color: "#FFD801"
+    unit: "%"
+    show:
+      legend_value: false
+      in_header: true
+      in_chart: false
+  - entity: sensor.sa_todays_energy_exported
+    name: Exported PV
+    color: yellow
+    float_precision: 1
+    show:
+      legend_value: false
+      in_header: false
+  - entity: sensor.sa_todays_energy_consumed_solar
+    name: Consumed PV
+    color: "#FFD801"
+    float_precision: 1
+    show:
+      legend_value: false
+      in_header: false
+  - entity: sensor.sa_todays_energy_imported
+    name: Imported - kWh
+    color: brown
+    float_precision: 1
+    show:
+      legend_value: false
+      in_header: false
