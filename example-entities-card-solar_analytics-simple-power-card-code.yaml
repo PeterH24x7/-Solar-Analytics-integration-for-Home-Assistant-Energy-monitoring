@@ -1,0 +1,15 @@
+title: Power
+type: entities
+entities:
+  - entity: sensor.sa_live_site_data_time_stamp
+    name: Time Stamp
+    secondary_info: last-changed
+  - entity: sensor.sa_import_export_power
+    name: Import Export Power
+    secondary_info: none
+  - entity: sensor.sa_consumption_power
+    name: Consumption
+  - entity: sensor.sa_generation_power
+    icon: mdi:solar-power
+    name: Generation
+
