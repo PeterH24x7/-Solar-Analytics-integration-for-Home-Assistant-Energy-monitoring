@@ -1,0 +1,18 @@
+title: Solar Analytics Power 1min
+type: entities
+entities:
+  - entity: sensor.sa_live_site_data_time_stamp
+    name: Time Stamp
+    secondary_info: last-changed
+  - entity: sensor.sa_home_consumption_power
+    name: Household Consumption
+  - entity: sensor.sa_battery_power
+    name: "> Battery Out (+ve) / In (-ve) "
+  - entity: sensor.sa_consumption_power
+    name: "> Consumption w/ Battery"
+  - entity: sensor.sa_generation_power
+    icon: mdi:solar-power
+    name: Generation
+  - entity: sensor.sa_import_export_power
+    name: Import (+ve) / Export (-ve)
+    secondary_info: none
