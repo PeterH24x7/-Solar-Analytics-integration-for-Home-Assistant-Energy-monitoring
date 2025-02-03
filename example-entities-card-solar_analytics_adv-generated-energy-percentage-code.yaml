@@ -1,0 +1,9 @@
+title: Generated Energy % Usage
+type: entities
+entities:
+  - entity: sensor.sa_todays_electric_vehicle_generated_percentage
+  - entity: sensor.sa_todays_heating_cooling_generated_percentage
+  - entity: sensor.sa_todays_hot_water_generated_percentage
+  - entity: sensor.sa_todays_stove_oven_generated_percentage
+  - entity: sensor.sa_todays_consumed_generated_percentage
+  - entity: sensor.sa_todays_generated_consumed_percentage
