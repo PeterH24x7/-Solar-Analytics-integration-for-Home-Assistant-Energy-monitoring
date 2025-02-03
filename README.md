@@ -89,9 +89,10 @@ This integration draws on the API get calls defined in the Solar Analytics publi
 also uses additional gets as learned from the Solar Analytics user portal.
 https://api-docs.solaranalytics.com/OpenAPI-Specs/sapublic-openapi.yaml 
 
-For those using Amber Electric as their electricity retailer and/or with an EV, additional bonus sensors are 
-defined in <amber_forecast.yaml> and <amber_ev_charge_cost.yaml>, respectively. See the code header for the 
-detailed description and usage.
+For those using <solar_analytics_advanced.yaml> and Amber Electric integration as their electricity 
+retailer, there are additional bonus sensors defined in <amber_forecast.yaml> and 
+<amber_ev_charge_cost.yaml> etc. See the code header comments for the detailed description and usage. 
+Also see Amber related examples.
  
 If you find my work useful, please buy me a coffee ... thank you!
   https://www.buymeacoffee.com/peter24x7
