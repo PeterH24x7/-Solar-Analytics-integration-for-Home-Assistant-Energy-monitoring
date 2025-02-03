@@ -1,0 +1,38 @@
+title: Power Flow with Battery
+type: custom:power-flow-card-plus
+entities:
+  battery:
+    entity: sensor.sa_battery_power
+    use_metadata: false
+    color_circle: true
+    icon: mdi:battery-high
+    display_zero_tolerance: 10
+  grid:
+    entity: sensor.sa_import_export_power
+    secondary_info: {}
+    display_zero_tolerance: 10
+  solar:
+    entity: sensor.sa_generation_power
+    display_zero_state: true
+    secondary_info: {}
+    display_zero_tolerance: 10
+  home:
+    secondary_info: {}
+    entity: sensor.sa_consumption_power
+clickable_entities: true
+display_zero_lines:
+  mode: show
+  transparency: 50
+  grey_color:
+    - 189
+    - 189
+    - 189
+use_new_flow_rate_model: true
+w_decimals: 0
+max_flow_rate: 10
+min_expected_power: 1
+watt_threshold: 100000
+transparency_zero_lines: 0
+kw_decimals: 0
+min_flow_rate: 1
+max_expected_power: 10000
