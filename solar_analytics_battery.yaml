@@ -911,7 +911,7 @@ rest:
                       >= energy.generated|float -%}
                   {%- elif energy.generated|float > energy.consumed_home|float -%}
                     {%- set energy.battery_in = energy.battery_in|float 
-                          + energy.generated|float|float - energy.consumed_home|float -%}                  
+                          + energy.generated|float - energy.consumed_home|float -%}                  
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
