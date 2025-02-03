@@ -1,0 +1,55 @@
+title: Today's Energy Totals kWh
+type: entities
+entities:
+  - entity: sensor.sa_data_by_5min_time_stamp
+    icon: mdi:clock-end
+    secondary_info: last-updated
+    name: Time Stamp
+  - entity: sensor.sa_todays_energy_consumed_total
+    icon: mdi:home-lightning-bolt-outline
+    name: CONSUMED
+  - entity: sensor.sa_todays_energy_imported
+    name: "> Imported"
+  - entity: sensor.sa_todays_energy_consumed_solar
+    name: "> Generated"
+  - entity: sensor.sa_todays_energy_generated_total
+    icon: mdi:solar-power
+    name: GENERATED
+  - entity: sensor.sa_todays_energy_generated_expected_total
+    name: "> Expected"
+    secondary_info: none
+  - entity: sensor.sa_todays_energy_exported
+    name: "> Exported"
+  - entity: sensor.sa_todays_energy_consumed_solar
+    name: "> Consumed"
+  - entity: sensor.sa_todays_electric_vehicle_total
+    icon: mdi:car-electric
+    name: EV Charging
+  - entity: sensor.sa_todays_electric_vehicle_imported
+    name: "> Imported"
+  - entity: sensor.sa_todays_electric_vehicle_generated
+    name: "> Generated"
+  - entity: sensor.sa_todays_air_conditioner_total
+    icon: mdi:hvac
+    name: Heating Cooling
+  - entity: sensor.sa_todays_heating_cooling_imported
+    name: "> Imported"
+  - entity: sensor.sa_todays_heating_cooling_generated
+    secondary_info: none
+    name: "> Generated"
+  - entity: sensor.sa_todays_hot_water_total
+    icon: mdi:shower-head
+    name: Hot Water
+  - entity: sensor.sa_todays_hot_water_imported
+    name: "> Imported"
+  - entity: sensor.sa_todays_hot_water_generated
+    name: "> Generated"
+  - entity: sensor.sa_todays_stove_oven_total
+    icon: mdi:stove
+    name: Stove-Oven
+  - entity: sensor.sa_todays_stove_oven_imported
+    name: "> Imported"
+  - entity: sensor.sa_todays_stove_oven_generated
+    name: "> Generated"
+  - entity: sensor.sa_todays_energy_other_total
+    name: Other
