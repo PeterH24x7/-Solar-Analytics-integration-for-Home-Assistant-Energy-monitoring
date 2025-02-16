@@ -4,7 +4,7 @@
 
 ================================================================
 
-Last updated for Release 9 30-Jan-25. See comments in the code and the detailed sensor notes for more
+Last updated for Release 9 15-Feb-25. See comments in the code and the detailed sensor notes for more
 information.
 
 This is a Solar Analytics public API integration into Home Assistant.
@@ -14,7 +14,8 @@ and various load energy (where applicable). These sensors can be configured to w
 Energy Monitoring capability. There are also 1-minute power sensors for consumed/generated and exported/
 imported power. Lastly, general systems status information is provided.
 
-There are 4 separate instances (yaml files) for the code:
+There are 4 individual configurations (yaml files) for the code - select the one that best suits your 
+Solar Analytics hardware set-up:
 
     1. <solar_analytics.yaml> - consumed/generated, imported/exported, and standard load sensors 
        including electric vehicle, heating-cooling, hot water and stove-oven (where available). Total
@@ -30,7 +31,8 @@ There are 4 separate instances (yaml files) for the code:
        sensor support (13 battery related sensors in all). [NEW as of Release 9]
 
 
-Included sensors as follows - see solar_analytics_sensors_notes_v9-30Jan25.xlsx/pdf for details:
+Included sensors as follows - see solar_analytics_sensors_notes_v9-13Feb25.pdf/xlsx for sensor
+and attribute related naming and usage:
 
     1. Solar Analytics portal, system and solar PV performance status. 
     
@@ -62,7 +64,7 @@ Included sensors as follows - see solar_analytics_sensors_notes_v9-30Jan25.xlsx/
     
     4. 1-minute power average Watts reporting of consumed/generated and import-exported power.
     
-    5. Where costs are configured in the HA Energy Monitoring (fixed, peak/off-peak/shoulder, spot market 
+    5. Where costs are configured in the HA Energy Dashboard (fixed, peak/off-peak/shoulder, spot market 
        - e.g. Amber) there are sensors for: 
 
          > Cumulative daily net cost ($).
@@ -76,9 +78,9 @@ Included sensors as follows - see solar_analytics_sensors_notes_v9-30Jan25.xlsx/
        included as <SA-apex-charts.yaml> - unfortunately technically limited by HA to 2h20m.  
        
 
-HA Energy Monitoring requires the manual assignment of "Grid consumption", "Return to grid", "Solar 
+HA Energy Dashboard set-up requires the manual assignment of "Grid consumption", "Return to grid", "Solar 
 production", and "Battery Systems" via the HA Energy configuration page. The individual energy channels (e.g. 
-load_ev_charger, load_air_conditioner, load_stove) can also be added to the HA Energy Manager as "Monitor 
+load_ev_charger, load_air_conditioner, load_stove) can also be added to the HA Energy Dashboard as "Monitor 
 Individual Devices". Go to HA settings and search for “Energy Configuration” to make the changes. 
 
 Set-up and updates from previous releases involve the installation of a stand-alone file listed as a package 
