@@ -30,7 +30,6 @@ Solar Analytics hardware set-up:
     4. <solar_analytics_battery.yaml> - is a modification of solar_analytics_3phase with added battery 
        sensor support (13 battery related sensors in all). [NEW as of Release 9]
 
-
 Included sensors as follows - see solar_analytics_sensors_notes_v9-13Feb25.pdf/xlsx for sensor
 and attribute related naming and usage:
 
@@ -77,11 +76,18 @@ and attribute related naming and usage:
     7. Power history sensor for graphing each SA available channel in Apex Charts (Lovelace sample code 
        included as <SA-apex-charts.yaml> - unfortunately technically limited by HA to 2h20m.  
        
-
 HA Energy Dashboard set-up requires the manual assignment of "Grid consumption", "Return to grid", "Solar 
 production", and "Battery Systems" via the HA Energy configuration page. The individual energy channels (e.g. 
 load_ev_charger, load_air_conditioner, load_stove) can also be added to the HA Energy Dashboard as "Monitor 
 Individual Devices". Go to HA settings and search for “Energy Configuration” to make the changes. 
+
+See example dashboards as follows - 
+
+https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring/blob/main/example-dashboard-solar_analytics_advanced.jpg
+
+https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring/blob/main/example-dashboard-solar_analytics_battery.jpg
+
+https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring/blob/main/example-energy-dashboard-view.jpg
 
 Set-up and updates from previous releases involve the installation of a stand-alone file listed as a package 
 in the configuration.yaml file - see the <solar_analytics.yaml> code header text for instructions. To 
