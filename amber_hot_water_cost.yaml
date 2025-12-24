@@ -8,11 +8,12 @@
 #
 # Created: 20-Apr-2023
 #
-# Last updated: 18-May-23
+# Last updated: 13-Dec-25
 #
 # Updates: 
 #   18-May-23 - fixed meter resetting based on daily trigger at midnight.
 #   2-Jun-23  - fixed error detection.
+#   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26)
 #
 # Calculate Hot Water cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
@@ -45,16 +46,15 @@
 #
 # -----------------------------------------------------------------------------
 
-sensor:
-  - platform: template
-    sensors:
-      amber_todays_hot_water_total_cost:
-        friendly_name: "Hot Water Total Cost"
+template:
+  - sensor:
+      - name: "Hot Water Total Cost"
+        default_entity_id: sensor.amber_todays_hot_water_total_cost
         unique_id: amber_todays_hot_water_total_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
-        icon_template: mdi:cash
-        value_template: >-
+        icon: mdi:cash
+        state: >-
           {% if states.sensor.sa_data_by_5min_load_hot_water_total.state|float(0.0) > 0.0 -%}
             {%- if states("sensor.amber_todays_hot_water_imported_cost")|is_number 
                 and states("sensor.amber_todays_hot_water_generated_cost")|is_number -%}
@@ -67,17 +67,17 @@ sensor:
           {%- else -%}
             0.0
           {%- endif -%}
-        attribute_templates: 
-          state_class: total
+        state_class: total
+        attributes: 
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      amber_todays_hot_water_rate_av:
-        friendly_name: "Hot Water Rate Average"
+      - name: "Hot Water Rate Average"
+        default_entity_id: sensor.amber_todays_hot_water_rate_av
         unique_id: amber_todays_hot_water_rate_av
         unit_of_measurement: "$/kWh"
         device_class: "monetary"
-        icon_template: mdi:cash-plus
-        value_template: >-
+        icon: mdi:cash-plus
+        state: >-
           {%- if states.sensor.amber_todays_hot_water_total_cost.state|is_number 
               and states.sensor.sa_data_by_5min_load_hot_water_total.state|is_number -%}
             {%- if states.sensor.sa_data_by_5min_load_hot_water_total.state|float(0.0) > 100 -%}
@@ -91,12 +91,10 @@ sensor:
           {%- else -%}
             unavailable
           {%- endif -%}
-        attribute_templates:
-          state_class: measure
+        state_class: measurement
+        attributes:
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-
-template:
   - trigger:
       - platform: state
         entity_id: sensor.sa_todays_hot_water_generated
@@ -169,8 +167,8 @@ template:
                 -}}
             {%- endif -%}
           {%- endif -%}
+        state_class: total
         attributes: 
-          state_class: total
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
@@ -209,8 +207,8 @@ template:
                 -}}
             {%- endif -%}
           {%- endif -%}
+        state_class: total
         attributes: 
-          state_class: total
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 

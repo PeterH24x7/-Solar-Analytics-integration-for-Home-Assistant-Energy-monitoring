@@ -7,10 +7,11 @@
 #
 # Created: 9-Feb-2023
 #
-# Last updated: 2-Jun-2023
+# Last updated: 13-Dec-25
 #
 # Updates: 
 #   2-Jun-23 - improved error checking for when nem_date is not defined.
+#   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26)
 #
 # Creates a new "amber_forecast" sensor which contains the curent time and 24 hours 
 # future time in 30 minute increments, the general forecast prices and the feed-in 
@@ -36,14 +37,13 @@
 #
 # -----------------------------------------------------------------------------
 
-sensor:
-  - platform: template
-    sensors:
-      amber_forecast:
-        friendly_name: Amber Forecast
+template:
+  - sensor:
+      - name: "Amber Forecast"
+        default_entity_id: sensor.amber_forecast
         unique_id: amber_forecast
-        icon_template: mdi:chart-line
-        value_template: >
+        icon: mdi:chart-line
+        state: >
           {%- if state_attr('sensor.amber12ayrst_general_price', 'nem_date')|is_defined -%}
             {{- as_local(as_datetime(states.sensor.amber12ayrst_general_price.attributes.nem_date) 
                 - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")  
@@ -54,7 +54,7 @@ sensor:
                 else 'unavailable'
               -}} 
           {%- endif -%}
-        attribute_templates: 
+        attributes: 
           times: >
             {%- if states.sensor.amber12ayrst_general_price.attributes.nem_date|is_defined -%}
               {%- set ns = namespace( times = [ as_local( as_datetime( states.sensor.amber12ayrst_general_price.attributes.nem_date) 

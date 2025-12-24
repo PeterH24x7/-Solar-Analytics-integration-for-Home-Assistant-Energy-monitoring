@@ -1,21 +1,20 @@
 # -----------------------------------------------------------------------------
 #
-# Heating Cooling integration for Home Assistant Energy Management. 
+# Guest EV charging integration for Home Assistant Energy Management. 
 # Requires <solar_analytics.yaml> to be installed or an alternative source
 # of Watt-hour charging data.
 # 
 # Developed by Peter Hormann
 #
-# Created: 20-Apr-2023
+# Created: 6-Sep-24
 #
 # Last updated: 13-Dec-25
 #
 # Updates: 
-#   18-May-23 - fixed meter resetting based on daily trigger at midnight.
-#   2-Jun-23  - fixed error detection.
+#   6-Sep-24 - Initial version.
 #   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26)
 #
-# Calculate Heating Cooling cost for both generated and imported energy, total net 
+# Calculate Guest EV cost to charge for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
 #
 # If not using Solar Analytics, this integration requires a source of vehicle charged 
@@ -27,12 +26,18 @@
 # If not using the Amber Energy integration, then replace the last_price attribute
 # with an alternative energy price sensor (or simply a constant - e.g. 0.25).
 #
+# Key sensors:
+#   > ev_guest_total_cost - total net cost of imported and generated energy costs.
+#   > ev_guest_rate_av - average unit rate (total cost / total usage).
+#   > ev_guest_generated_cost - generated energy cost.
+#   > ev_guest_imported_cost - imported energy cost.
+# 
 # Installation: 
 #   1. Copy this yaml file to the HA config directory.
 #   2. Include this file name as a package in the HA <configuration.yaml>. 
 #      For example -
 #        packages:
-#          pack_2: !include amber_ev_charge_cost.yaml
+#          pack_2: !include amber_ev_guest_charge_cost.yaml
 #   3. Rename "amber12ayrst_xyz" sensors to match HA Amber installation sensor naming.
 #   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
 #   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
@@ -46,20 +51,21 @@
 #
 # -----------------------------------------------------------------------------
 
+
 template:
   - sensor:
-      - name: "Heating Cooling Total Cost"
-        default_entity_id: sensor.amber_todays_heating_cooling_total_cost
-        unique_id: amber_todays_heating_cooling_total_cost
+      - name: "EV Guest Total Cost"
+        default_entity_id: sensor.ev_guest_total_cost
+        unique_id: ev_guest_total_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
         state: >-
-          {%- if states.sensor.sa_data_by_5min_load_air_conditioner_total.state|float(0.0) > 0.0 -%}
-            {%- if states.sensor.amber_todays_heating_cooling_imported_cost.state|is_number 
-                and states.sensor.amber_todays_heating_cooling_generated_cost.state|is_number -%}
-              {{- states.sensor.amber_todays_heating_cooling_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0) 
+          {%- if states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0) > 0.0 -%}
+            {%- if states.sensor.ev_guest_imported_cost.state|is_number 
+                and states.sensor.ev_guest_generated_cost.state|is_number -%}
+              {{- states.sensor.ev_guest_generated_cost.state|float(0.0)
+                  + states.sensor.ev_guest_imported_cost.state|float(0.0) 
                 -}}
             {%- else -%}
               0.0
@@ -69,75 +75,78 @@ template:
           {%- endif -%}
         state_class: total
         attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.ev_guest_imported_cost.attributes.time_stamp -}}"
 
-      - name: "Heating Cooling Rate Average"
-        default_entity_id: sensor.amber_todays_heating_cooling_rate_av
-        unique_id: amber_todays_heating_cooling_rate_av
+      - name: "EV Guest Rate Average"
+        default_entity_id: sensor.ev_guest_rate_av
+        unique_id: ev_guest_rate_av
         unit_of_measurement: "$/kWh"
         device_class: "monetary"
         icon: mdi:cash-plus
         state: >-
-          {%- if states.sensor.amber_todays_heating_cooling_total_cost.state|is_number 
-              and states.sensor.sa_data_by_5min_load_air_conditioner_total.state|is_number -%}
-            {%- if states.sensor.sa_data_by_5min_load_air_conditioner_total.state|float(0.0) > 100.0 -%}
-              {{- ( states.sensor.amber_todays_heating_cooling_total_cost.state|float(0.0) 
-                    / states.sensor.sa_data_by_5min_load_air_conditioner_total.state|float(1.0) 
-                    * 1000.0 ) | round(3) 
+          {%- if states.sensor.ev_guest_total_cost.state|is_number 
+              and states.sensor.nr_ev_guest_charging_energy.state|is_number -%}
+            {%- if states.sensor.nr_ev_guest_charging_energy.state|float(0.0) > 0.1 -%}
+              {{- ( states.sensor.ev_guest_total_cost.state|float(0.0) 
+                    / states.sensor.nr_ev_guest_charging_energy.state|float(1.0) 
+                  ) | round(3) 
                 -}}
             {%- else -%}
               {{- this.state|default(0.0) -}}
             {%- endif -%}
           {%- else -%}
-            unavailable
+            {{- this.state|default(0.0) -}}
           {%- endif -%}
         state_class: measurement
         attributes:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.ev_guest_total_cost.attributes.time_stamp -}}"
 
+#
+# Daily energy metering reset sensor - amber_meter_reset - INCLUDED IN amber_ev_charge_cost.yaml.
+#
   - trigger:
       - platform: state
-        entity_id: sensor.sa_todays_heating_cooling_generated
+        entity_id: sensor.nr_ev_guest_charging_energy
         attribute: time_stamp
     sensor:
-      - name: "amber_todays_heating_cooling_generated_inc_cost"
-        unique_id: amber_todays_heating_cooling_generated_inc_cost
+      - name: "amber_todays_ev_guest_generated_cost_inc"
+        unique_id: amber_todays_ev_guest_generated_cost_inc
         state: >-
-          {%- if states.sensor.sa_todays_heating_cooling_generated.attributes.ac_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_heating_cooling_generated_inc_cost.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_heating_cooling_generated.attributes.ac_energy_last5min|float(0.0) 
+          {%- if states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+            {{- states.sensor.amber_todays_ev_guest_generated_cost_inc.attributes.last_price|default(0.0)|float 
+                * states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float 
                 / 1000.0 
               -}}
           {%- else -%}
             0.0
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.nr_ev_guest_charging_energy.attributes.time_stamp -}}"
           last_price: "{{- states.sensor.amber12ayrst_feed_in_price.state|default(0.0) -}}"
 
   - trigger:
       - platform: state
-        entity_id: sensor.sa_todays_heating_cooling_imported
+        entity_id: sensor.nr_ev_guest_charging_energy
         attribute: time_stamp
     sensor:
-      - name: "amber_todays_heating_cooling_imported_inc_cost"
-        unique_id: amber_todays_heating_cooling_imported_inc_cost
+      - name: "amber_todays_ev_guest_imported_cost_inc"
+        unique_id: amber_todays_ev_guest_imported_cost_inc
         state: >-
-          {%- if states.sensor.sa_todays_heating_cooling_imported.attributes.ac_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_heating_cooling_imported_inc_cost.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_heating_cooling_imported.attributes.ac_energy_last5min|float(0.0) 
+          {%- if states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+            {{- states.sensor.amber_todays_ev_guest_imported_cost_inc.attributes.last_price|default(0.0)|float 
+                * states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float 
                 / 1000.0 
               -}}
           {%- else -%}
             0.0
           {%- endif -%}
         attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.nr_ev_guest_charging_energy.attributes.time_stamp -}}"
           last_price: "{{- states.sensor.amber12ayrst_general_price.state|default(0.0) -}}"
 
   - trigger:
       - platform: state
-        entity_id: sensor.amber_todays_heating_cooling_generated_inc_cost
+        entity_id: sensor.amber_todays_ev_guest_generated_cost_inc
         attribute: time_stamp
       - platform: state
         entity_id: binary_sensor.amber_meter_reset
@@ -147,8 +156,8 @@ template:
           - "unavailable"
         to: "on"
     sensor:
-      - name: "Heating Cooling Generated Cost"
-        unique_id: amber_todays_heating_cooling_generated_cost
+      - name: "EV Guest Generated Cost"
+        unique_id: ev_guest_generated_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
@@ -156,13 +165,13 @@ template:
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
-            {%- if states.sensor.amber_todays_heating_cooling_generated_inc_cost.state|is_number -%}
-              {{- states.sensor.amber_todays_heating_cooling_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_heating_cooling_generated_inc_cost.state|float(0.0) 
+            {%- if states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|is_number -%}
+              {{- states.sensor.ev_guest_generated_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|default(0.0)|float 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_heating_cooling_generated_cost.state
-                  if states.sensor.amber_todays_heating_cooling_generated_cost.state|is_number 
+              {{- states.sensor.ev_guest_generated_cost.state
+                  if states.sensor.ev_guest_generated_cost.state|is_number 
                   else 0.0 
                 -}}
             {%- endif -%}
@@ -172,12 +181,12 @@ template:
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state 
+                else states.sensor.amber_todays_ev_guest_generated_cost_inc.attributes.time_stamp 
               -}}
 
   - trigger:
       - platform: state
-        entity_id: sensor.amber_todays_heating_cooling_imported_inc_cost
+        entity_id: sensor.amber_todays_ev_guest_imported_cost_inc
         attribute: time_stamp
       - platform: state
         entity_id: binary_sensor.amber_meter_reset
@@ -187,8 +196,8 @@ template:
           - "unavailable"
         to: "on"
     sensor:
-      - name: "Heating Cooling Imported Cost"
-        unique_id: amber_todays_heating_cooling_imported_cost
+      - name: "EV Guest Imported Cost"
+        unique_id: ev_guest_imported_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
@@ -196,13 +205,13 @@ template:
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
-            {%- if states.sensor.amber_todays_heating_cooling_imported_inc_cost.state|is_number -%}
-              {{- states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0)
-                  + states.sensor.amber_todays_heating_cooling_imported_inc_cost.state|float(0.0) 
+            {%- if states.sensor.amber_todays_ev_guest_imported_cost_inc.state|is_number -%}
+              {{- states.sensor.ev_guest_imported_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_ev_guest_imported_cost_inc.state|default(0.0)|float 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_heating_cooling_imported_cost.state
-                  if states.sensor.amber_todays_heating_cooling_imported_cost.state|is_number 
+              {{- states.sensor.ev_guest_imported_cost.state
+                  if states.sensor.ev_guest_imported_cost.state|is_number 
                   else 0.0 
                 -}}
             {%- endif -%}
@@ -212,7 +221,7 @@ template:
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state 
+                else states.sensor.amber_todays_ev_guest_imported_cost_inc.attributes.time_stamp 
               -}}
 
 # -----------------------------------------------------------------------------
