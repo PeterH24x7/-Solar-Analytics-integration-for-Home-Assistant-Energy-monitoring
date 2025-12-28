@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 9 FINAL- <<< BATTERY STORAGE SOLUTION 
+# >>> RELEASE 10 DRAFT <<< BATTERY STORAGE SOLUTION 
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 #
@@ -19,7 +19,7 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 10-Feb-25 as Release 9 FINAL- - see update notes below.
+# Last updated: 13-Dec-25 as Release 10 DRAFT - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -133,6 +133,8 @@
 #                     - Power Battery - power into (-ve) and out of (+ve) the battery.
 #                 - Added last5min energy attribute to sa_todays_xloadx_total and 
 #                   sa_todays_energy_imported/exported sensors. Units are Wh.
+#       13-Dec-25 - Changes meet modern template sensor format (old format to be deprecated 30-Jun-26).
+#                 - Basic code tidy-up deleting redundant/old commentary.
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -170,8 +172,8 @@
 #   within their refresh timecycles. If any duplicate sensors happen to be created, go to HA Settings ->
 #   Devices & Services -> Entities and delete any "sa_..." prefixed sensors showing as unavailable or
 #   disabled, then restart once more and the correctly named sensor and its data should be restored
-#   to normal. Alternatively go to 'Developer Tools -> Services' and select 'Recorder: Purge Entities' 
-#   and then 'Choose entity' and select all the "sa_..." entities needing to purge immediately.
+#   to normal. Alternatively go to 'Developer Tools -> Actions' and select 'Purge entities, 
+#   recorder purge.entities' and then 'entity_id' and then enter a list of entities needing to be purged.
 #
 # If you find my work useful, please buy me a coffee ... thank you!
 #   https://www.buymeacoffee.com/peter24x7
@@ -505,7 +507,6 @@ rest:
         json_attributes_path: "$.data[0]"
         json_attributes: "t_stamp"
 
-
       # The last 5 minutes energy by sensor type per Solar Analytics channel.
       # These sensors may be useful for calculating energy cost where energy costs vary at intervals down
       # to 5 minutes (e.g. Amber Electric). The may also be useful for configuring "Utility Meter" helpers in HA.
@@ -661,7 +662,6 @@ rest:
           {%- else -%}
             unavailable
           {%- endif -%}
-
 
       # Daily cumulative total "raw" sensors per Solar Analytics channel reset at midnight.
       # These sensors are used for feeding "fully configured" template sensors defined further down below.
@@ -1262,7 +1262,6 @@ rest:
     # REST SENSORS FOR sa_live_site_data...
     sensor:
 
-
       # Timestamp of the latest power data.
       # Return values: latest time stamp if available, else "unavailable".
       #
@@ -1447,174 +1446,173 @@ rest:
           {%- endif -%}
 
 
+template:
+
 # -----------------------------------------------------------------------------
-# SENSORS
-sensor:
-
-
-  # TEMPLATE SENSORS
-  - platform: template
-    sensors:
+# TEMPLATE SENSORS - updated 11-Dec-25
+  - sensor:
 
       # Solar Analytics status sensors
-      sa_dashboard_status:
-        friendly_name: "Dashboard Status"
-        unique_id: sa_dashboard_status
-        value_template: "{{- state_attr('sensor.sa_status', 'dashboard_status') -}}"
-      sa_mer_status:
-        friendly_name: "System Status"
-        unique_id: sa_mer_status
-        value_template: "{{- state_attr('sensor.sa_status', 'mer_status') -}}"
-      sa_mer_percentage:
-        friendly_name: "PV Performance"
-        unique_id: sa_mer_percentage
-        value_template: "{{- state_attr('sensor.sa_status', 'mer_percentage') -}}"
-        unit_of_measurement: "%"
+    - name: "Dashboard Status"
+      default_entity_id: sensor.sa_dashboard_status
+      unique_id: sa_dashboard_status
+      state: "{{- state_attr('sensor.sa_status', 'dashboard_status') -}}"
+
+    - name: "System Status"
+      default_entity_id: sensor.sa_mer_status
+      unique_id: sa_mer_status
+      state: "{{- state_attr('sensor.sa_status', 'mer_status') -}}"
+        
+    - name: "PV Performance"
+      default_entity_id: sensor.sa_mer_percentage
+      unique_id: sa_mer_percentage
+      state: "{{- state_attr('sensor.sa_status', 'mer_percentage') -}}"
+      unit_of_measurement: "%"
 
       # Solar Analytics todays total energy sensors
       #
-      # Note state can go up/down in value, so state_class is measurement, not total_increasing
+      # Note state can go up/down in value, so state_class is measurement, not total_increasing,
       # to avoid system log error.
-      sa_todays_energy_consumed_total:
-        friendly_name: "Total Energy Consumed"
-        unique_id: sa_todays_energy_consumed_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Consumed"
+      default_entity_id: sensor.sa_todays_energy_consumed_total
+      unique_id: sa_todays_energy_consumed_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_energy_consumed_total.state 
               if states.sensor.sa_data_by_5min_energy_consumed_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:home-battery
-        device_class: "energy"
-        attribute_templates:
-          state_class: "measurement"
+      icon: mdi:home-battery
+      device_class: "energy"
+      state_class: "measurement"
+      attributes:
           time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
           last5min: "{{- states.sensor.sa_data_by_5min_energy_consumed.state -}}"
 
-      sa_todays_energy_generated_total:
-        friendly_name: "Total Energy Generated"
-        unique_id: sa_todays_energy_generated_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Generated"
+      default_entity_id: sensor.sa_todays_energy_generated_total
+      unique_id: sa_todays_energy_generated_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_energy_generated_total.state 
               if states.sensor.sa_data_by_5min_energy_generated_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:solar-power
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: "{{- states.sensor.sa_data_by_5min_energy_generated.state -}}"
+      icon: mdi:solar-power
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes: 
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: "{{- states.sensor.sa_data_by_5min_energy_generated.state -}}"
 
 ### BATTERY STORAGE - START >>>>>>>>>>
-      sa_todays_energy_consumed_home_total:
-        friendly_name: "Total Energy Consumed Home"
-        unique_id: sa_todays_energy_consumed_home_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Consumed Home"
+      default_entity_id: sensor.sa_todays_energy_consumed_home_total
+      unique_id: sa_todays_energy_consumed_home_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_energy_consumed_home_total.state 
               if states.sensor.sa_data_by_5min_energy_consumed_home_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:home-lightning-bolt-outline
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: "{{- states.sensor.sa_data_by_5min_energy_consumed_home.state -}}"
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: "{{- states.sensor.sa_data_by_5min_energy_consumed_home.state -}}"
 
-      sa_todays_energy_consumed_home_imported_total:
-        friendly_name: "Total Energy Consumed Home Imported"
-        unique_id: sa_todays_energy_consumed_home_imported_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Consumed Home Imported"
+      default_entity_id: sensor.sa_todays_energy_consumed_home_imported_total
+      unique_id: sa_todays_energy_consumed_home_imported_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_energy_consumed_home_imported_total.state 
               if states.sensor.sa_data_by_5min_energy_consumed_home_imported_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:home-lightning-bolt-outline
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      sa_todays_battery_storage_in_total:
-        friendly_name: "Total Battery Storage Energy Input"
-        unique_id: sa_todays_battery_storage_in_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Battery Storage Energy Input"
+      default_entity_id: sensor.sa_todays_battery_storage_in_total
+      unique_id: sa_todays_battery_storage_in_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_battery_storage_in_total.state
               if states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:battery-positive
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: >-
+      icon: mdi:battery-positive
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: >-
             {{- -1.0 * states.sensor.sa_data_by_5min_battery_storage.state|float 
                   if states.sensor.sa_data_by_5min_battery_storage.state|default(0.0)|float < 0.0 
                   else 0.0 -}}
 
-      sa_todays_battery_storage_out_total:
-        friendly_name: "Total Battery Storage Energy Output"
-        unique_id: sa_todays_battery_storage_out_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Battery Storage Energy Output"
+      default_entity_id: sensor.sa_todays_battery_storage_out_total
+      unique_id: sa_todays_battery_storage_out_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_battery_storage_out_total.state
               if states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:battery-negative
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: >-
+      icon: mdi:battery-negative
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: >-
             {{- states.sensor.sa_data_by_5min_battery_storage.state 
                   if states.sensor.sa_data_by_5min_battery_storage.state|default(0.0)|float > 0.0 
                   else 0.0 -}}
 
       # Solar Analytics derived total energy sensors
-      sa_todays_energy_imported:
-        friendly_name: "Total Energy Imported"
-        unique_id: sa_todays_energy_imported
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Imported"
+      default_entity_id: sensor.sa_todays_energy_imported
+      unique_id: sa_todays_energy_imported
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_imported_total.state
               if states.sensor.sa_data_by_5min_imported_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:transmission-tower-export
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: "{{- states.sensor.sa_data_by_5min_imported.state -}}"
+      icon: mdi:transmission-tower-export
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes: 
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: "{{- states.sensor.sa_data_by_5min_imported.state -}}"
 
-      sa_todays_energy_exported:
-        friendly_name: "Total Energy Exported"
-        unique_id: sa_todays_energy_exported
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Exported"
+      default_entity_id: sensor.sa_todays_energy_exported
+      unique_id: sa_todays_energy_exported
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_exported_total.state
               if states.sensor.sa_data_by_5min_exported_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:transmission-tower-import
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: "{{- states.sensor.sa_data_by_5min_exported.state -}}"
+      icon: mdi:transmission-tower-import
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes: 
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        last5min: "{{- states.sensor.sa_data_by_5min_exported.state -}}"
 
-      sa_todays_energy_exported_generated:
-        friendly_name: "Total Energy Exported Generated"
-        unique_id: sa_todays_energy_exported_generated
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Exported Generated"
+      default_entity_id: sensor.sa_todays_energy_exported_generated
+      unique_id: sa_todays_energy_exported_generated
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_exported_generated_total.state
               if states.sensor.sa_data_by_5min_exported_generated_total.state|is_number
               else this.state|default(0.0) -}}
-        icon_template: mdi:transmission-tower-import
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:transmission-tower-import
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
       #
       # Battery Storage Energy In Generated and Imported
@@ -1623,17 +1621,17 @@ sensor:
       # stored while actually charging. Charger standby energy consumption is not included, but will be
       # apparent where the sum of the two sensors is slightly less than sa_todays_battery_storage_in_total.
       #
-      sa_todays_battery_storage_in_generated:
-        friendly_name: "Battery Storage Energy In Generated"
-        unique_id: sa_todays_battery_storage_in_generated
-        unit_of_measurement: "Wh"
-        value_template: "{{- states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state -}}"
-        icon_template: mdi:home-battery-outline
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          percentage_of_total: >
+    - name: "Battery Storage Energy In Generated"
+      default_entity_id: sensor.sa_todays_battery_storage_in_generated
+      unique_id: sa_todays_battery_storage_in_generated
+      unit_of_measurement: "Wh"
+      state: "{{- states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state -}}"
+      icon: mdi:home-battery-outline
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        percentage_of_total: >
             {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state|is_number ) 
                 and ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number ) 
               -%}
@@ -1649,18 +1647,17 @@ sensor:
               none
             {%- endif -%}
 
-      sa_todays_battery_storage_in_imported:
-        friendly_name: "Battery Storage Energy In Imported"
-        unique_id: sa_todays_battery_storage_in_imported
-        unit_of_measurement: "Wh"
-        value_template: "{{- states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state -}}"
-        icon_template: mdi:home-battery-outline
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-
-          percentage_of_total: >
+    - name: "Battery Storage Energy In Imported"
+      default_entity_id: sensor.sa_todays_battery_storage_in_imported
+      unique_id: sa_todays_battery_storage_in_imported
+      unit_of_measurement: "Wh"
+      state: "{{- states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state -}}"
+      icon: mdi:home-battery-outline
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        percentage_of_total: >
             {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state|is_number ) 
                 and ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number ) 
               -%}
@@ -1676,38 +1673,38 @@ sensor:
               none
             {%- endif -%}
 
-      # The percentage of Battery Storage energy that from generated sources
-      # - i.e. not imported.
-      sa_todays_battery_storage_in_generated_percentage:
-        friendly_name: "Battery Storage Energy In Generated Percentage"
-        unique_id: sa_todays_battery_storage_in_generated_percentage
-        unit_of_measurement: "%"
-        value_template: >
+    # The percentage of Battery Storage energy that from generated sources
+    # - i.e. not imported.
+    - name: "Battery Storage Energy In Generated Percentage"
+      default_entity_id: sensor.sa_todays_battery_storage_in_generated_percentage
+      unique_id: sa_todays_battery_storage_in_generated_percentage
+      unit_of_measurement: "%"
+      state: >
           {{- state_attr( "sensor.sa_todays_battery_storage_in_generated", "percentage_of_total" ) 
               if states.sensor.sa_todays_battery_storage_in_generated.attributes.percentage_of_total|is_number 
               else "none" 
             -}}
-        icon_template: mdi:home-battery-outline
-        attribute_templates:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:home-battery-outline
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      #
-      # Battery Storage Energy Out Consumed and Exported
-      #
-      # Note: sa_todays_battery_storage_out_consumed and sa_todays_battery_storage_out_exported only sum the Wh
-      # while discharging.
-      #
-      sa_todays_battery_storage_out_consumed:
-        friendly_name: "Battery Storage Energy Out Consumed"
-        unique_id: sa_todays_battery_storage_out_consumed
-        unit_of_measurement: "Wh"
-        value_template: "{{- states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state -}}"
-        icon_template: mdi:home-battery
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          percentage_of_total: >
+    #
+    # Battery Storage Energy Out Consumed and Exported
+    #
+    # Note: sa_todays_battery_storage_out_consumed and sa_todays_battery_storage_out_exported only sum the Wh
+    # while discharging.
+    #
+    - name: "Battery Storage Energy Out Consumed"
+      default_entity_id: sensor.sa_todays_battery_storage_out_consumed
+      unique_id: sa_todays_battery_storage_out_consumed
+      unit_of_measurement: "Wh"
+      state: "{{- states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state -}}"
+      icon: mdi:home-battery
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        percentage_of_total: >
             {%- if ( states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state|is_number ) 
                 and ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number ) 
               -%}
@@ -1723,17 +1720,17 @@ sensor:
               none
             {%- endif -%}
 
-      sa_todays_battery_storage_out_exported:
-        friendly_name: "Battery Storage Energy Out Exported"
-        unique_id: sa_todays_battery_storage_out_exported
-        unit_of_measurement: "Wh"
-        value_template: "{{- states.sensor.sa_data_by_5min_battery_storage_out_exported_total.state -}}"
-        icon_template: mdi:home-battery
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          percentage_of_total: >
+    - name: "Battery Storage Energy Out Exported"
+      default_entity_id: sensor.sa_todays_battery_storage_out_exported
+      unique_id: sa_todays_battery_storage_out_exported
+      unit_of_measurement: "Wh"
+      state: "{{- states.sensor.sa_data_by_5min_battery_storage_out_exported_total.state -}}"
+      icon: mdi:home-battery
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        percentage_of_total: >
             {%- if ( states.sensor.sa_todays_battery_storage_out_exported.state|is_number ) 
                 and ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number ) 
               -%}
@@ -1751,66 +1748,66 @@ sensor:
 
       # The percentage of Battery Storage energy that was consumed
       # - i.e. not exported.
-      sa_todays_battery_storage_out_consumed_percentage:
-        friendly_name: "Battery Storage Energy Out Consumed Percentage"
-        unique_id: sa_todays_battery_storage_out_consumed_percentage
-        unit_of_measurement: "%"
-        value_template: >
+    - name: "Battery Storage Energy Out Consumed Percentage"
+      default_entity_id: sensor.sa_todays_battery_storage_out_consumed_percentage
+      unique_id: sa_todays_battery_storage_out_consumed_percentage
+      unit_of_measurement: "%"
+      state: >
           {{- state_attr( "sensor.sa_todays_battery_storage_out_consumed", "percentage_of_total" ) 
               if states.sensor.sa_todays_battery_storage_out_consumed.attributes.percentage_of_total|is_number 
               else "none" 
             -}}
-        icon_template: mdi:home-battery
-        attribute_templates:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:home-battery
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 ### BATTERY STORAGE - END <<<<<<<<<<
 
 
-      #
-      # Solar Energy Consumed as kWh, % of generated, and % of of consumed.
-      #
-      # Return values: numeric if available, else previous value else "unavailable"
-      sa_todays_energy_consumed_solar:
-        friendly_name: "Total Energy Consumed Solar"
-        unique_id: sa_todays_energy_consumed_solar
-        unit_of_measurement: "Wh"
-        value_template: >-
+    #
+    # Solar Energy Consumed as kWh, % of generated, and % of of consumed.
+    #
+    # Return values: numeric if available, else previous value else "unavailable"
+    - name: "Total Energy Consumed Solar"
+      default_entity_id: sensor.sa_todays_energy_consumed_solar
+      unique_id: sa_todays_energy_consumed_solar
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_5min_consumed_solar_total.state 
               if states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number 
               else this.state|default("unavailable") -}}
-        icon_template: mdi:solar-power
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total_increasing"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:solar-power
+      device_class: "energy"
+      state_class: "total_increasing"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
-      sa_todays_energy_generated_expected_total:
-        friendly_name: "Total Energy Generated Expected"
-        unique_id: sa_todays_energy_generated_expected_total
-        unit_of_measurement: "Wh"
-        value_template: >-
+    - name: "Total Energy Generated Expected"
+      default_entity_id: sensor.sa_todays_energy_generated_expected_total
+      unique_id: sa_todays_energy_generated_expected_total
+      unit_of_measurement: "Wh"
+      state: >-
           {{- states.sensor.sa_data_by_hour_generated_expected.state 
               if states.sensor.sa_data_by_hour_generated_expected.state|is_number 
               else this.state|default("unavailable") -}}
-        icon_template: mdi:solar-power
-        device_class: "energy"
-        attribute_templates:
-          state_class: "total"
-          time_stamp: "{{- states.sensor.sa_data_by_hour_time_stamp.state -}}"
+      icon: mdi:solar-power
+      device_class: "energy"
+      state_class: "total"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_hour_time_stamp.state -}}"
 
-      #
-      # Calculation logic considerate of total energy generated at start of the day
-      # could be negative (i.e. the inverter has consumed energy at start-up).
-      #
-      # Percentage of generated energy that has been consumed.
-      # Only shows valid sensor when the daily generated solar energy is greater than 100Wh.
-      #
-      # Return values: numeric if available, else "unavailable"
-      sa_todays_generated_consumed_percentage:
-        friendly_name: "Percentage Generated Energy Consumed"
-        unique_id: sa_todays_generated_consumed_percentage
-        unit_of_measurement: "%"
-        value_template: >
+    #
+    # Calculation logic considerate of total energy generated at start of the day
+    # could be negative (i.e. the inverter has consumed energy at start-up).
+    #
+    # Percentage of generated energy that has been consumed.
+    # Only shows valid sensor when the daily generated solar energy is greater than 100Wh.
+    #
+    # Return values: numeric if available, else "unavailable"
+    - name: "Percentage Generated Energy Consumed"
+      default_entity_id: sensor.sa_todays_generated_consumed_percentage
+      unique_id: sa_todays_generated_consumed_percentage
+      unit_of_measurement: "%"
+      state: >
           {%- if (states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number) 
                 and (states.sensor.sa_data_by_5min_energy_generated_total.state|is_number) 
             -%}
@@ -1832,18 +1829,18 @@ sensor:
                 else "unavailable" 
               -}}
           {%- endif -%}
-        icon_template: mdi:solar-power
-        attribute_templates:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:solar-power
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      # Percentage of consumed energy that has been generated.
-      #
-      # Return values: numeric if available, else "unavailable"
-      sa_todays_consumed_generated_percentage:
-        friendly_name: "Percentage Consumed Energy Generated"
-        unique_id: sa_todays_consumed_generated_percentage
-        unit_of_measurement: "%"
-        value_template: >-
+    # Percentage of consumed energy that has been generated.
+    #
+    # Return values: numeric if available, else "unavailable"
+    - name: "Percentage Consumed Energy Generated"
+      default_entity_id: sensor.sa_todays_consumed_generated_percentage
+      unique_id: sa_todays_consumed_generated_percentage
+      unit_of_measurement: "%"
+      state: >-
           {%- if (states.sensor.sa_data_by_5min_energy_consumed_total.state|is_number) 
                 and (states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number) 
             -%}
@@ -1865,29 +1862,29 @@ sensor:
                 else "unavailable" 
               -}}
           {%- endif -%}
-        icon_template: mdi:solar-power
-        attribute_templates:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:solar-power
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      #
-      # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
-      # The units are in kW.
-      #
-      # Note: results are 5 minute average power, with area under the graph being the energy
-      # usage within that time interval. The time duration is limited to 28x 5 minute intervals
-      # (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
-      # Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
-      # the number of intervals if that's desireable, but at a lower resolution. Lastly,
-      # the history sensors as states from above are implemented as attributes so they
-      # can be readily interpreted as lists.
-      #
-      sa_todays_energy_history:
-        friendly_name: "Total Energy History"
-        unique_id: sa_todays_energy_history
-        value_template: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        icon_template: mdi:sun-clock
-        attribute_templates:
-          times: >-
+    #
+    # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
+    # The units are in kW.
+    #
+    # Note: results are 5 minute average power, with area under the graph being the energy
+    # usage within that time interval. The time duration is limited to 28x 5 minute intervals
+    # (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
+    # Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
+    # the number of intervals if that's desireable, but at a lower resolution. Lastly,
+    # the history sensors as states from above are implemented as attributes so they
+    # can be readily interpreted as lists.
+    #
+    - name: "Total Energy History"
+      default_entity_id: sensor.sa_todays_energy_history
+      unique_id: sa_todays_energy_history        
+      state: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      icon: mdi:sun-clock
+      attributes:
+        times: >-
             {%- set ns = namespace( 
                 times=[],
                 count = states('sensor.sa_data_by_5min_history_time_stamp_count')|int(0) 
@@ -1905,135 +1902,131 @@ sensor:
                 {%- endif -%}
             {%- endfor -%}
             {{- ns.times -}}
-          times_simple: >
+        times_simple: >
             {{- states.sensor.sa_data_by_5min_history_time_stamp.state -}}
-          energy_consumed: >
+        energy_consumed: >
             {{- states.sensor.sa_data_by_5min_history_energy_consumed.state -}}
-          energy_generated: >
+        energy_generated: >
             {{- states.sensor.sa_data_by_5min_history_energy_generated.state -}}
 
 ### BATTERY STORAGE - START >>>>>>>>>>
-          energy_battery_storage: >
+        energy_battery_storage: >
             {{- states.sensor.sa_data_by_5min_history_battery_storage.state -}}
-          energy_consumed_home: >
+        energy_consumed_home: >
             {{- states.sensor.sa_data_by_5min_history_energy_consumed_home.state -}}
-          energy_imported_exported: >
+        energy_imported_exported: >
             {{- states.sensor.sa_data_by_5min_history_imported_exported.state -}}
 ### BATTERY STORAGE - END <<<<<<<<<<
 
-
-      #
-      # Solar Analytics power sensors
-      #
-      # Return values: numeric if available, else previous value else "0.0"
-      sa_consumption_power:
-        friendly_name: "Power Consumption"
-        unique_id: sa_consumption_power
-        unit_of_measurement: "W"
-        value_template: >-
+    #
+    # Solar Analytics power sensors
+    #
+    # Return values: numeric if available, else previous value else "0.0"
+    - name: "Power Consumption"
+      default_entity_id: sensor.sa_consumption_power
+      unique_id: sa_consumption_power
+      unit_of_measurement: "W"
+      state: >-
           {{- states.sensor.sa_live_site_data_consumed.state
               if states.sensor.sa_live_site_data_consumed.state|is_number
               else states.sensor.sa_consumption_power.state|default(0.0)
             -}}
-        icon_template: mdi:home-battery-outline
-        device_class: "power"
-        attribute_templates:
-          state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "power"
+      state_class: "measurement"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
-      sa_generation_power:
-        friendly_name: "Power Generation"
-        unique_id: sa_generation_power
-        unit_of_measurement: "W"
-        value_template: >-
+    - name: "Power Generation"
+      default_entity_id: sensor.sa_generation_power
+      unique_id: sa_generation_power
+      unit_of_measurement: "W"
+      state: >-
           {{- states.sensor.sa_live_site_data_generated.state
               if states.sensor.sa_live_site_data_generated.state|is_number
               else states.sensor.sa_generation_power.state|default(0.0)
             -}}
-        icon_template: mdi:solar-power
-        device_class: "power"
-        attribute_templates:
-          state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:solar-power
+      device_class: "power"
+      state_class: "measurement"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
-      sa_import_export_power:
-        friendly_name: "Power Import Export"
-        unique_id: sa_import_export_power
-        unit_of_measurement: "W"
-        value_template: >-
+    - name: "Power Import Export"
+      default_entity_id: sensor.sa_import_export_power
+      unique_id: sa_import_export_power
+      unit_of_measurement: "W"
+      state: >-
           {{- states.sensor.sa_live_site_data_imported_exported.state
               if states.sensor.sa_live_site_data_imported_exported.state|is_number
               else states.sensor.sa_import_export_power.state|default(0.0)
             -}}
-        icon_template: mdi:transmission-tower
-        device_class: "power"
-        attribute_templates:
-          state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:transmission-tower
+      device_class: "power"
+      state_class: "measurement"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
 ### BATTERY STORAGE - START >>>>>>>>>>
-      sa_battery_power:
-        friendly_name: "Power Battery"
-        unique_id: sa_battery_power
-        unit_of_measurement: "W"
-        value_template: >-
+    - name: "Power Battery"
+      default_entity_id: sensor.sa_battery_power
+      unique_id: sa_battery_power
+      unit_of_measurement: "W"
+      state: >-
           {{- states.sensor.sa_live_site_data_battery.state
               if states.sensor.sa_live_site_data_battery.state|is_number
               else states.sensor.sa_battery_power.state|default(0.0)
             -}}
-        icon_template: mdi:battery
-        device_class: "power"
-        attribute_templates:
-          state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:battery
+      device_class: "power"
+      state_class: "measurement"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 
-      sa_home_consumption_power:
-        friendly_name: "Power Home Consumption"
-        unique_id: sa_home_consumption_power
-        unit_of_measurement: "W"
-        value_template: >-
+    - name: "Power Home Consumption"
+      default_entity_id: sensor.sa_home_consumption_power
+      unique_id: sa_home_consumption_power
+      unit_of_measurement: "W"
+      state: >-
           {{- states.sensor.sa_live_site_data_consumed_home.state
               if states.sensor.sa_live_site_data_consumed_home.state|is_number
               else states.sensor.sa_home_consumption_power.state|default(0.0)
             -}}
-        icon_template: mdi:home-lightning-bolt-outline
-        device_class: "power"
-        attribute_templates:
-          state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "power"
+      state_class: "measurement"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
 ### BATTERY STORAGE - END <<<<<<<<<<
 
 #
 # Home Assistant Energy Dashboard extras
 #
-
-      #
-      # Todays Energy Total Net Cost
-      #
-      # The HA Energy Dashboard automatically creates two entities respectively derived from the sa_todays_energy_imported 
-      # and sa_todays_energy_exported, where:
-      #   > sa_todays_energy_imported_cost - cost of imported energy
-      #   > sa_todays_energy_exported_compensation - revenue from exported energy
-      # This new entity provides the net cost (imported cost minus exported revenue)
-      #
-      sa_todays_energy_total_net_cost:
-        friendly_name: "Todays Energy Total Net Cost"
-        unique_id: sa_todays_energy_total_net_cost
-        unit_of_measurement: "AUD"
-        device_class: "monetary"
-        icon_template: mdi:cash
-        value_template: >-
+    #
+    # Todays Energy Total Net Cost
+    #
+    # The HA Energy Dashboard automatically creates two entities respectively derived from the sa_todays_energy_imported 
+    # and sa_todays_energy_exported, where:
+    #   > sa_todays_energy_imported_cost - cost of imported energy
+    #   > sa_todays_energy_exported_compensation - revenue from exported energy
+    # This new entity provides the net cost (imported cost minus exported revenue)
+    #
+    - name: "Todays Energy Total Net Cost"
+      default_entity_id: sensor.sa_todays_energy_total_net_cost
+      unique_id: sa_todays_energy_total_net_cost
+      unit_of_measurement: "AUD"
+      device_class: "monetary"
+      icon: mdi:cash
+      state: >-
           {{- (states.sensor.sa_todays_energy_imported_cost.state|float(0.0)) 
               - (states.sensor.sa_todays_energy_exported_compensation.state|float(0.0)) 
             -}}
-        attribute_templates:
-          state_class: "total"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      state_class: "total"
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
 # -----------------------------------------------------------------------------
 # TEMPLATE TRIGGER SENSORS
-template:
-
   #
   # Todays Energy Import Rate
   #
