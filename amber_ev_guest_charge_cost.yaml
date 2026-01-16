@@ -1,25 +1,24 @@
 # -----------------------------------------------------------------------------
 #
-# EV charging integration for Home Assistant Energy Management. 
+# Guest EV charging integration for Home Assistant Energy Management. 
 # Requires <solar_analytics.yaml> to be installed or an alternative source
 # of Watt-hour charging data.
 # 
 # Developed by Peter Hormann
 #
-# Created: 9-Apr-2023
+# Created: 6-Sep-24
 #
 # Last updated: 30-Dec-25
 #
 # Updates: 
-#   18-May-23 - fixed meter resetting based on daily trigger at midnight.
-#   2-Jun-23  - fixed error detection.
+#   6-Sep-24 - Initial version.
 #   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26).
 #   30-Dec-25 - fixed amber_todays_..._rate_av occasional unavailable errors in sys-log.
 #
-# Calculate EV cost to charge for both generated and imported energy, total net 
+# Calculate Guest EV cost to charge for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
 #
-# ALSO, defines amber_meter_reset to trigger amber_..._cost.yaml midnight reset to zero.
+# ALSO, requires amber_meter_reset to trigger midnight reset to zero - refer amber_ev_charge_cost.yaml.
 #
 # If not using Solar Analytics, this integration requires a source of vehicle charged 
 # generated or imported sources updated in 5 minute interval Watt-hours. A binary 
@@ -30,12 +29,18 @@
 # If not using the Amber Energy integration, then replace the last_price attribute
 # with an alternative energy price sensor (or simply a constant - e.g. 0.25).
 #
+# Key sensors:
+#   > ev_guest_total_cost - total net cost of imported and generated energy costs.
+#   > ev_guest_rate_av - average unit rate (total cost / total usage).
+#   > ev_guest_generated_cost - generated energy cost.
+#   > ev_guest_imported_cost - imported energy cost.
+# 
 # Installation: 
 #   1. Copy this yaml file to the HA config directory.
 #   2. Include this file name as a package in the HA <configuration.yaml>. 
 #      For example -
 #        packages:
-#          pack_2: !include amber_ev_charge_cost.yaml
+#          pack_2: !include amber_ev_guest_charge_cost.yaml
 #   3. Rename "amber12ayrst_xyz" sensors to match HA Amber installation sensor naming.
 #   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
 #   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
@@ -51,18 +56,18 @@
 
 template:
   - sensor:
-    - name: "Electric Vehicle Total Cost"
-      default_entity_id: sensor.amber_todays_electric_vehicle_total_cost
-      unique_id: amber_todays_electric_vehicle_total_cost
+    - name: "EV Guest Total Cost"
+      default_entity_id: sensor.ev_guest_total_cost
+      unique_id: ev_guest_total_cost
       unit_of_measurement: "AUD"
       device_class: "monetary"
       icon: mdi:cash
       state: >-
           {%- if states.sensor.sa_data_by_5min_load_ev_charger_total.state|float(0.0) > 0.0 -%}
-            {%- if states.sensor.amber_todays_electric_vehicle_imported_cost.state|is_number 
-                and states.sensor.amber_todays_electric_vehicle_generated_cost.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0) 
+            {%- if states.sensor.ev_guest_imported_cost.state|is_number 
+                and states.sensor.ev_guest_generated_cost.state|is_number -%}
+              {{- states.sensor.ev_guest_generated_cost.state|float(0.0)
+                  + states.sensor.ev_guest_imported_cost.state|float(0.0) 
                 -}}
             {%- else -%}
               0.0
@@ -72,87 +77,74 @@ template:
           {%- endif -%}
       state_class: total
       attributes: 
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        time_stamp: "{{- states.sensor.ev_guest_imported_cost.attributes.time_stamp -}}"
 
-    - name: "Electric Vehicle Rate Average"
-      default_entity_id: sensor.amber_todays_electric_vehicle_rate_av
-      unique_id: amber_todays_electric_vehicle_rate_av
+    - name: "EV Guest Rate Average"
+      default_entity_id: sensor.ev_guest_rate_av
+      unique_id: ev_guest_rate_av
       unit_of_measurement: "$/kWh"
       device_class: "monetary"
       icon: mdi:cash-plus
       state: >-
 
-        {%- set cost = states('sensor.amber_todays_electric_vehicle_total_cost') -%}
-        {%- set load = states('sensor.sa_data_by_5min_load_ev_charger_total') -%}
-        {%- if cost|is_number and load|is_number and load|float > 100 -%}
-          {{- (cost|float / load|float * 1000) | round(3) -}}
-        {%- else -%}
-          0.0
-        {%- endif -%}
+          {%- set cost = states('sensor.ev_guest_total_cost') -%}
+          {%- set load = states('sensor.nr_ev_guest_charging_energy') -%}
+          {%- if cost|is_number and load|is_number and load|float > 100 -%}
+            {{- (cost|float / load|float * 1000) | round(3) -}}
+          {%- else -%}
+            0.0
+          {%- endif -%}
 
       state_class: measurement
       attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        time_stamp: "{{- states.sensor.ev_guest_total_cost.attributes.time_stamp -}}"
 
 #
-# Daily energy metering reset sensor
-# - defines amber_meter_reset to trigger amber_..._cost.yaml.
+# Daily energy metering reset sensor - amber_meter_reset - INCLUDED IN amber_ev_charge_cost.yaml.
 #
-# Meter resets at midnight.
-  - trigger:
-    - platform: time
-      at: "00:00"
-    binary_sensor:
-      - name: "amber_meter_reset"
-        unique_id: amber_meter_reset
-        state: "on"
-        auto_off: "00:00:10"
-        attributes:
-          time_stamp: "{{- as_timestamp(now()) | timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}"
-
   - trigger:
     - platform: state
-      entity_id: sensor.sa_todays_electric_vehicle_generated
+      entity_id: sensor.nr_ev_guest_charging_energy
       attribute: time_stamp
     sensor:
-      - name: "amber_todays_electric_vehicle_generated_cost_inc"
-        unique_id: amber_todays_electric_vehicle_generated_cost_inc
+      - name: "amber_todays_ev_guest_generated_cost_inc"
+        unique_id: amber_todays_ev_guest_generated_cost_inc
         state: >-
-          {%- if states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_electric_vehicle_generated_cost_inc.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|float(0.0) 
+          {%- if states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+            {{- states.sensor.amber_todays_ev_guest_generated_cost_inc.attributes.last_price|default(0.0)|float 
+                * states.sensor.sa_todays_electric_vehicle_generated.attributes.ev_energy_last5min|default(0.0)|float 
                 / 1000.0 
               -}}
           {%- else -%}
             0.0
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.nr_ev_guest_charging_energy.attributes.time_stamp -}}"
           last_price: "{{- states.sensor.amber12ayrst_feed_in_price.state|default(0.0) -}}"
 
   - trigger:
     - platform: state
-      entity_id: sensor.sa_todays_electric_vehicle_imported
+      entity_id: sensor.nr_ev_guest_charging_energy
       attribute: time_stamp
     sensor:
-      - name: "amber_todays_electric_vehicle_imported_cost_inc"
-        unique_id: amber_todays_electric_vehicle_imported_cost_inc
+      - name: "amber_todays_ev_guest_imported_cost_inc"
+        unique_id: amber_todays_ev_guest_imported_cost_inc
         state: >-
-          {%- if states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|float(0.0) > 0.0 -%}
-            {{- states.sensor.amber_todays_electric_vehicle_imported_cost_inc.attributes.last_price|float(0.0) 
-                * states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|float(0.0) 
+          {%- if states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float > 0.0 -%}
+            {{- states.sensor.amber_todays_ev_guest_imported_cost_inc.attributes.last_price|default(0.0)|float 
+                * states.sensor.sa_todays_electric_vehicle_imported.attributes.ev_energy_last5min|default(0.0)|float 
                 / 1000.0 
               -}}
           {%- else -%}
             0.0
           {%- endif -%}
         attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states.sensor.nr_ev_guest_charging_energy.attributes.time_stamp -}}"
           last_price: "{{- states.sensor.amber12ayrst_general_price.state|default(0.0) -}}"
 
   - trigger:
     - platform: state
-      entity_id: sensor.amber_todays_electric_vehicle_generated_cost_inc
+      entity_id: sensor.amber_todays_ev_guest_generated_cost_inc
       attribute: time_stamp
     - platform: state
       entity_id: binary_sensor.amber_meter_reset
@@ -162,8 +154,8 @@ template:
         - "unavailable"
       to: "on"
     sensor:
-      - name: "Electric Vehicle Generated Cost"
-        unique_id: amber_todays_electric_vehicle_generated_cost
+      - name: "EV Guest Generated Cost"
+        unique_id: ev_guest_generated_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
@@ -172,12 +164,12 @@ template:
             0.0
           {%- else -%}
             {%- if states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|float(0.0) 
+              {{- states.sensor.ev_guest_generated_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_electric_vehicle_generated_cost_inc.state|default(0.0)|float 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_electric_vehicle_generated_cost.state
-                  if states.sensor.amber_todays_electric_vehicle_generated_cost.state|is_number 
+              {{- states.sensor.ev_guest_generated_cost.state
+                  if states.sensor.ev_guest_generated_cost.state|is_number 
                   else 0.0 
                 -}}
             {%- endif -%}
@@ -187,12 +179,12 @@ template:
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state 
+                else states.sensor.amber_todays_ev_guest_generated_cost_inc.attributes.time_stamp 
               -}}
 
   - trigger:
     - platform: state
-      entity_id: sensor.amber_todays_electric_vehicle_imported_cost_inc
+      entity_id: sensor.amber_todays_ev_guest_imported_cost_inc
       attribute: time_stamp
     - platform: state
       entity_id: binary_sensor.amber_meter_reset
@@ -202,8 +194,8 @@ template:
         - "unavailable"
       to: "on"
     sensor:
-      - name: "Electric Vehicle Imported Cost"
-        unique_id: amber_todays_electric_vehicle_imported_cost
+      - name: "EV Guest Imported Cost"
+        unique_id: ev_guest_imported_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
@@ -211,13 +203,13 @@ template:
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
-            {%- if states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|is_number -%}
-              {{- states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
-                  + states.sensor.amber_todays_electric_vehicle_imported_cost_inc.state|float(0.0) 
+            {%- if states.sensor.amber_todays_ev_guest_imported_cost_inc.state|is_number -%}
+              {{- states.sensor.ev_guest_imported_cost.state|default(0.0)|float
+                  + states.sensor.amber_todays_ev_guest_imported_cost_inc.state|default(0.0)|float 
                 -}}
             {%- else -%}
-              {{- states.sensor.amber_todays_electric_vehicle_imported_cost.state
-                  if states.sensor.amber_todays_electric_vehicle_imported_cost.state|is_number 
+              {{- states.sensor.ev_guest_imported_cost.state
+                  if states.sensor.ev_guest_imported_cost.state|is_number 
                   else 0.0 
                 -}}
             {%- endif -%}
@@ -227,7 +219,7 @@ template:
           time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state 
+                else states.sensor.amber_todays_ev_guest_imported_cost_inc.attributes.time_stamp 
               -}}
 
 # -----------------------------------------------------------------------------

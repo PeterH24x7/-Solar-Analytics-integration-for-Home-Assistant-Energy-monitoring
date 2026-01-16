@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 10 DRAFT <<< SOLAR_ANALYTICS.YAML STANDARD SOLUTION
+# >>> RELEASE 10 DRAFT- <<< SOLAR_ANALYTICS.YAML STANDARD SOLUTION
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 #
@@ -117,6 +117,7 @@
 #                   sa_todays_energy_imported/exported sensors. Units are Wh.
 #       13-Dec-25 - Changes meet modern template sensor format (old format to be deprecated 30-Jun-26).
 #                 - Basic code tidy-up deleting redundant/old commentary.
+#                 - Fixed minor system log errors associated w/ sa_todays_..._percentage related sensors.
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -1234,7 +1235,6 @@ rest:
     # REST SENSORS FOR sa_live_site_data...
     sensor:
 
-
       # Timestamp of the latest power data.
       # Return values: latest time stamp if available, else "unavailable".
       #
@@ -1655,11 +1655,8 @@ template:
       default_entity_id: sensor.sa_todays_electric_vehicle_generated_percentage
       unique_id: sa_todays_electric_vehicle_generated_percentage
       unit_of_measurement: "%"
-      state: >
-          {{- state_attr( "sensor.sa_todays_electric_vehicle_generated", "percentage_of_total" ) 
-              if states.sensor.sa_todays_electric_vehicle_generated.attributes.percentage_of_total|is_number 
-              else "none" 
-            -}}
+      state: >-
+        {{- state_attr( "sensor.sa_todays_electric_vehicle_generated", "percentage_of_total" )|int(none) -}}
       icon: mdi:car-electric
       attributes:
         time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
@@ -1714,9 +1711,7 @@ template:
       unique_id: sa_todays_energy_generated_expected_total
       unit_of_measurement: "Wh"
       state: >-
-          {{- states.sensor.sa_data_by_hour_generated_expected.state 
-              if states.sensor.sa_data_by_hour_generated_expected.state|is_number 
-              else this.state|default("unavailable") -}}
+        {{- states('sensor.sa_data_by_hour_generated_expected')|float(none) -}}
       icon: mdi:solar-power
       device_class: "energy"
       state_class: "total"
@@ -1730,12 +1725,12 @@ template:
     # Percentage of generated energy that has been consumed.
     # Only shows valid sensor when the daily generated solar energy is greater than 100Wh.
     #
-    # Return values: numeric if available, else "unavailable"
+    # Return values: numeric if available, else "none"
     - name: "Percentage Generated Energy Consumed"
       default_entity_id: sensor.sa_todays_generated_consumed_percentage
       unique_id: sa_todays_generated_consumed_percentage
       unit_of_measurement: "%"
-      state: >
+      state: >-
           {%- if (states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number) 
                 and (states.sensor.sa_data_by_5min_energy_generated_total.state|is_number) 
             -%}
@@ -1752,10 +1747,7 @@ template:
               100.0
             {%- endif -%}
           {%- else -%}
-            {{- states.sensor.sa_todays_generated_consumed_percentage.state 
-                if states.sensor.sa_todays_generated_consumed_percentage.state|is_number 
-                else "unavailable" 
-              -}}
+            {{- states("sensor.sa_todays_generated_consumed_percentage")|int(none) -}}
           {%- endif -%}
       icon: mdi:solar-power
       attributes:
@@ -1763,7 +1755,7 @@ template:
 
     # Percentage of consumed energy that has been generated.
     #
-    # Return values: numeric if available, else "unavailable"
+    # Return values: numeric if available, else "none"
     - name: "Percentage Consumed Energy Generated"
       default_entity_id: sensor.sa_todays_consumed_generated_percentage
       unique_id: sa_todays_consumed_generated_percentage
@@ -1785,10 +1777,7 @@ template:
               0.0
             {%- endif -%}
           {%- else -%}
-            {{- states.sensor.sa_todays_consumed_generated_percentage.state 
-                if states.sensor.sa_todays_consumed_generated_percentage.state|is_number 
-                else "unavailable" 
-              -}}
+            {{- states("sensor.sa_todays_consumed_generated_percentage")|int(none) -}}
           {%- endif -%}
       icon: mdi:solar-power
       attributes:

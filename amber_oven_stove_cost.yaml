@@ -8,15 +8,18 @@
 #
 # Created: 5-May-2023
 #
-# Last updated: 13-Dec-25
+# Last updated: 30-Dec-25
 #
 # Updates: 
 #   18-May-23 - fixed meter resetting based on daily trigger at midnight.
 #   2-Jun-23  - fixed error detection.
-#   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26)
+#   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26).
+#   30-Dec-25 - fixed amber_todays_..._rate_av occasional unavailable errors in sys-log.
 #
 # Calculate Stove Oven cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
+#
+# ALSO, requires amber_meter_reset to trigger midnight reset to zero - refer amber_ev_charge_cost.yaml.
 #
 # If not using Solar Analytics, this integration requires a source of vehicle charged 
 # generated or imported sources updated in 5 minute interval Watt-hours. A binary 
@@ -48,79 +51,57 @@
 
 template:
   - sensor:
-      - name: "Todays Other Total Cost"
-        default_entity_id: sensor.amber_todays_other_total_cost
-        unique_id: amber_todays_other_total_cost
-        unit_of_measurement: "AUD"
-        device_class: "monetary"
-        icon: mdi:cash
-        state: >
-          {{- ( states.sensor.sa_todays_energy_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_hot_water_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0)
-              ) 
-              | round(4)
-            -}}
-        state_class: total
-        attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-
-      - name: "Stove Oven Total Cost"
-        default_entity_id: sensor.amber_todays_stove_oven_total_cost
-        unique_id: amber_todays_stove_oven_total_cost
-        unit_of_measurement: "AUD"
-        device_class: "monetary"
-        icon: mdi:cash
-        state: >
-          {% if states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0) > 0.0 -%}
+    - name: "Stove Oven Total Cost"
+      default_entity_id: sensor.amber_todays_stove_oven_total_cost
+      unique_id: amber_todays_stove_oven_total_cost
+      unit_of_measurement: "AUD"
+      device_class: "monetary"
+      icon: mdi:cash
+      state: >-
+          {%- if states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0) > 0.0 -%}
             {%- if states("sensor.amber_todays_stove_oven_imported_cost")|is_number 
                 and states("sensor.amber_todays_stove_oven_generated_cost")|is_number -%}
               {{- states.sensor.amber_todays_stove_oven_generated_cost.state|float(0.0)
-                  + states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0) -}}
+                  + states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0) 
+                -}}
             {%- else -%}
               0.0
             {%- endif -%}
           {%- else -%}
             0.0
           {%- endif -%}
-        state_class: total
-        attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      state_class: total
+      attributes: 
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
-      - name: "Stove Oven Rate Average"
-        default_entity_id: sensor.amber_todays_stove_oven_rate_av
-        unique_id: amber_todays_stove_oven_rate_av
-        unit_of_measurement: "$/kWh"
-        device_class: "monetary"
-        icon: mdi:cash-plus
-        state: >-
-          {%- if states.sensor.amber_todays_stove_oven_total_cost.state|is_number 
-              and states.sensor.sa_data_by_5min_load_stove_total.state|is_number -%}
-            {%- if states.sensor.sa_data_by_5min_load_stove_total.state|float(0.0) > 100.0 -%}
-              {{- ( states.sensor.amber_todays_stove_oven_total_cost.state|float(0.0) 
-                    / states.sensor.sa_data_by_5min_load_stove_total.state|float(1.0)
-                    * 1000.0 ) | round(3) 
-                -}}
-            {%- else -%}
-              {{- this.state|default(0.0) -}}
-            {%- endif -%}
+    - name: "Stove Oven Rate Average"
+      default_entity_id: sensor.amber_todays_stove_oven_rate_av
+      unique_id: amber_todays_stove_oven_rate_av
+      unit_of_measurement: "$/kWh"
+      device_class: "monetary"
+      icon: mdi:cash-plus
+      state: >-
+
+          {%- set cost = states('sensor.amber_todays_stove_oven_total_cost') -%}
+          {%- set load = states('sensor.sa_data_by_5min_load_stove_total') -%}
+          {%- if cost|is_number and load|is_number and load|float > 100 -%}
+            {{- (cost|float / load|float * 1000) | round(3) -}}
           {%- else -%}
-            unavailable
+            0.0
           {%- endif -%}
-        state_class: measurement
-        attributes:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+
+      state_class: measurement
+      attributes:
+        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
 
   - trigger:
-      - platform: state
-        entity_id: sensor.sa_todays_stove_oven_generated
-        attribute: time_stamp
+    - platform: state
+      entity_id: sensor.sa_todays_stove_oven_generated
+      attribute: time_stamp
     sensor:
       - name: "amber_todays_stove_oven_generated_inc_cost"
         unique_id: amber_todays_stove_oven_generated_inc_cost
-        state: >
+        state: >-
           {%- if states.sensor.sa_todays_stove_oven_generated.attributes.st_energy_last5min|float(0.0) > 0.0 -%}
             {{- states.sensor.amber_todays_stove_oven_generated_inc_cost.attributes.last_price|float(0.0) 
                   * states.sensor.sa_todays_stove_oven_generated.attributes.st_energy_last5min|float(0.0) 
@@ -134,9 +115,9 @@ template:
           last_price: "{{- states.sensor.amber12ayrst_feed_in_price.state|default(0.0) -}}"
 
   - trigger:
-      - platform: state
-        entity_id: sensor.sa_todays_stove_oven_imported
-        attribute: time_stamp
+    - platform: state
+      entity_id: sensor.sa_todays_stove_oven_imported
+      attribute: time_stamp
     sensor:
       - name: "amber_todays_stove_oven_imported_inc_cost"
         unique_id: amber_todays_stove_oven_imported_inc_cost
@@ -154,23 +135,23 @@ template:
           last_price: "{{- states.sensor.amber12ayrst_general_price.state|default(0.0) -}}"
 
   - trigger:
-      - platform: state
-        entity_id: sensor.amber_todays_stove_oven_generated_inc_cost
-        attribute: time_stamp
-      - platform: state
-        entity_id: binary_sensor.amber_meter_reset
-        from:
-          - "off"
-          - "unknown"
-          - "unavailable"
-        to: "on"
+    - platform: state
+      entity_id: sensor.amber_todays_stove_oven_generated_inc_cost
+      attribute: time_stamp
+    - platform: state
+      entity_id: binary_sensor.amber_meter_reset
+      from:
+        - "off"
+        - "unknown"
+        - "unavailable"
+      to: "on"
     sensor:
       - name: "Stove Oven Generated Cost"
         unique_id: amber_todays_stove_oven_generated_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
-        state: >
+        state: >-
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
@@ -187,29 +168,30 @@ template:
           {%- endif -%}
         state_class: total
         attributes: 
-          time_stamp: >
+          time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
-                else states.sensor.sa_data_by_5min_time_stamp.state -}}
+                else states.sensor.sa_data_by_5min_time_stamp.state 
+              -}}
 
   - trigger:
-      - platform: state
-        entity_id: sensor.amber_todays_stove_oven_imported_inc_cost
-        attribute: time_stamp
-      - platform: state
-        entity_id: binary_sensor.amber_meter_reset
-        from:
-          - "off"
-          - "unknown"
-          - "unavailable"
-        to: "on"
+    - platform: state
+      entity_id: sensor.amber_todays_stove_oven_imported_inc_cost
+      attribute: time_stamp
+    - platform: state
+      entity_id: binary_sensor.amber_meter_reset
+      from:
+        - "off"
+        - "unknown"
+        - "unavailable"
+      to: "on"
     sensor:
       - name: "Stove Oven Imported Cost"
         unique_id: amber_todays_stove_oven_imported_cost
         unit_of_measurement: "AUD"
         device_class: "monetary"
         icon: mdi:cash
-        state: >
+        state: >-
           {%- if states.binary_sensor.amber_meter_reset.state == "on" -%}
             0.0
           {%- else -%}
@@ -226,7 +208,7 @@ template:
           {%- endif -%}
         state_class: total
         attributes: 
-          time_stamp: >
+          time_stamp: >-
             {{- states.binary_sensor.amber_meter_reset.attributes.time_stamp 
                 if states.binary_sensor.amber_meter_reset.state == "on" 
                 else states.sensor.sa_data_by_5min_time_stamp.state 
