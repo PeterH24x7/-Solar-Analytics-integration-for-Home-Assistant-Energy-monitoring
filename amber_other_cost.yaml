@@ -1,0 +1,69 @@
+# -----------------------------------------------------------------------------
+#
+# Other devices integration for Home Assistant Energy Management. 
+# Requires <solar_analytics.yaml> to be installed or an alternative source
+# of Watt-hour charging data.
+# 
+# Developed by Peter Hormann
+#
+# Created: 29-Dec-25
+#
+# Last updated: 29-Dec-25
+#
+# Updates: 
+#   29-Dec-25 - initial version forked from amber_oven_stove_cost.yaml.
+#
+# Calculate Other devices cost for both generated and imported energy, total net 
+# cost and average combined charging rate for the day.
+#
+# ALSO, requires amber_meter_reset to trigger midnight reset to zero - refer amber_ev_charge_cost.yaml.
+#
+# If not using Solar Analytics, this integration requires a source of non-other devices 
+# generated or imported sources updated in 5 minute interval Watt-hours. A binary 
+# sensor (replacing sa_data_by_5min_meter_reset) is also required to indicate if/when 
+# the metering period has been reset - e.g. at midnight - must be true for one 5 
+# minute interval.
+#
+# If not using the Amber Energy integration, then replace the last_price attribute
+# with an alternative energy price sensor (or simply a constant - e.g. 0.25).
+#
+# Installation: 
+#   1. Copy this yaml file to the HA config directory.
+#   2. Include this file name as a package in the HA <configuration.yaml>. 
+#      For example -
+#        packages:
+#          pack_2: !include amber_ev_charge_cost.yaml
+#          pack_3: !include amber....yaml #etc
+#   3. Rename "amber12ayrst_xyz" sensors to match HA Amber installation sensor naming.
+#   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
+#   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
+#   6. Enjoy!
+#
+# If you find my work useful, please buy me a coffee ... thank you!
+#   https://www.buymeacoffee.com/peter24x7
+#
+# Reference for more information and updates:
+#   https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring
+#
+# -----------------------------------------------------------------------------
+
+template:
+  - sensor:
+      - name: "Todays Other Total Cost"
+        default_entity_id: sensor.amber_todays_other_total_cost
+        unique_id: amber_todays_other_total_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon: mdi:cash
+        state: >
+          {{- ( states.sensor.sa_todays_energy_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_hot_water_imported_cost.state|float(0.0)
+                - states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0)
+              ) 
+              | round(4)
+            -}}
+        state_class: total
+        attributes: 
+          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
