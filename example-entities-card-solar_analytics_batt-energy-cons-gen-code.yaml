@@ -1,5 +1,5 @@
 title: Today's Consumed & Generated kWh
-type: entities
+type: entities 
 entities:
   - entity: sensor.sa_data_by_5min_time_stamp
     icon: mdi:clock-end
