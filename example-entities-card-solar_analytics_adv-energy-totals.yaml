@@ -1,4 +1,4 @@
-title: Today's Energy Totals kWh
+title: Today's Energy Totals kWh 
 type: entities
 entities:
   - entity: sensor.sa_data_by_5min_time_stamp
