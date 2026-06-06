@@ -1,4 +1,4 @@
-title: Power
+title: Power 
 type: entities
 entities:
   - entity: sensor.sa_live_site_data_time_stamp
