@@ -1,4 +1,4 @@
-type: vertical-stack
+type: vertical-stack 
 cards:
   - type: horizontal-stack
     cards:
