@@ -1,4 +1,5 @@
 # -----------------------------------------------------------------------------
+# >>> RELEASE 10 FINAL - <<< AMBER FORECAST
 #
 # AMBER extras integration for Home Assistant Energy Management. 
 # Requires HA Amber Electric Integration to be installed.
@@ -7,12 +8,16 @@
 #
 # Created: 9-Feb-2023
 #
-# Last updated: 13-Dec-25
+# Last updated: 24-May-26
 #
 # Updates: 
-#   2-Jun-23 - improved error checking for when nem_date is not defined.
+#   2-Jun-23  - improved error checking for when nem_date is not defined.
 #   13-Dec-25 - to meet modern template sensor format (old format to be deprecated 30-Jun-26).
-#   7-Jan-26 - fixed system log error when nem_date doesn't exist (amber data is trucated).
+#   7-Jan-26  - fixed system log error when nem_date doesn't exist (amber data is trucated).
+#   24-May-26 - Improved state preservation when upstream data is unavailable
+#             - Added safer datetime handling for nem_date parsing
+#             - Prevented transient 'unknown/unavailable' churn during startup/reload
+#             - Ensured attribute arrays are only rebuilt when valid dat
 #
 # Creates a new "amber_forecast" sensor which contains the curent time and 24 hours 
 # future time in 30 minute increments, the general forecast prices and the feed-in 
@@ -21,10 +26,10 @@
 #
 # Installation: 
 #   1. Copy this yaml file to the HA config directory.
-#   2. Include this file name as a package in the HA <configuration.yaml>. 
+#   2. Include this file name as a package in the HA <configuration.yaml>. Package names must be unique.
 #      For example -
 #        packages:
-#          pack_1: !include amber_forecast.yaml
+#          pack_x: !include amber_forecast.yaml
 #   3. Rename "amber12ayrst_xyz" sensors to match HA Amber installation device naming.
 #   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
 #   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
@@ -44,78 +49,68 @@ template:
         default_entity_id: sensor.amber_forecast
         unique_id: amber_forecast
         icon: mdi:chart-line
-        state: >
-
+        state: >-
           {%- set nem_date = state_attr('sensor.amber12ayrst_general_price', 'nem_date') -%}
-          {%- if nem_date is defined and nem_date is not none and nem_date != '' -%}
-            {{- as_local(as_datetime(nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S") -}}
+          {%- set dt = as_datetime(nem_date) if nem_date else none -%}
+          {%- if dt is not none -%}
+            {{- as_local(dt - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S") -}}
           {%- else -%}
-            {{- states('sensor.amber_forecast') if states('sensor.amber_forecast') != 'unknown' else 'unavailable' -}}
+            {{- this.state if this.state not in ['unknown','unavailable'] else 'unavailable' -}}
           {%- endif -%}
-
-        attributes: 
+        attributes:
           times: >-
-
+            {%- set data = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
             {%- set nem_date = state_attr('sensor.amber12ayrst_general_price', 'nem_date') -%}
-            {%- set today = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
-            {%- if nem_date is defined and today is defined and today is iterable -%}
-              {%- set ns = namespace(times = [as_local(as_datetime(nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")]) -%}
-              {%- for hours in today -%}
-                {%- if 'nem_date' in hours -%}
-                  {%- set ns.times = ns.times + [as_local(as_datetime(hours.nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")] -%}
+            {%- if data is iterable and nem_date -%}
+              {%- set ns = namespace(arr=[as_local(as_datetime(nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")]) -%}
+              {%- for rec in data -%}
+                {%- if rec.nem_date is defined -%}
+                  {%- set t = as_local(as_datetime(rec.nem_date) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S") -%}
+                  {%- set ns.arr = ns.arr + [t] -%}
                 {%- endif -%}
               {%- endfor -%}
-              {{- ns.times -}}
+              {{- ns.arr -}}
             {%- else -%}
-              {{- state_attr('sensor.amber_forecast', 'times') if state_attr('sensor.amber_forecast', 'times') is defined else 'unavailable' -}}
+              {{- state_attr('sensor.amber_forecast','times') 
+                  if state_attr('sensor.amber_forecast','times') else [] -}}
             {%- endif -%}
-
           general_price: >-
-
-            {%- set nem_date = state_attr('sensor.amber12ayrst_general_price', 'nem_date') -%}
-            {%- set today = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
-            {%- if nem_date is defined and today is defined and today is iterable -%}
-              {%- set ns = namespace(general = [states('sensor.amber12ayrst_general_price')|float]) -%}
-              {%- for hours in today -%}
-                {%- if 'nem_date' in hours and 'per_kwh' in hours -%}
-                  {%- set ns.general = ns.general + [hours.per_kwh] -%}
+            {%- set data = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
+            {%- if data is iterable -%}
+              {%- set ns = namespace(arr=[states('sensor.amber12ayrst_general_price')|float]) -%}
+              {%- for rec in data -%}
+                {%- if rec.per_kwh is defined -%}
+                  {%- set ns.arr = ns.arr + [rec.per_kwh] -%}
                 {%- endif -%}
               {%- endfor -%}
-              {{- ns.general -}}
+              {{- ns.arr -}}
             {%- else -%}
-              {{- state_attr('sensor.amber_forecast', 'general_price') if state_attr('sensor.amber_forecast', 'general_price') is defined else 'unavailable' -}}
+              {{- state_attr('sensor.amber_forecast','general_price') 
+                  if state_attr('sensor.amber_forecast','general_price') else [] -}}
             {%- endif -%}
-
           fit_price: >-
-
-            {%- set nem_date = state_attr('sensor.amber12ayrst_general_price', 'nem_date') -%}
-            {%- set today = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
-            {%- if nem_date is defined and today is defined and today is iterable -%}
-              {%- set ns = namespace(fit = [state_attr('sensor.amber12ayrst_general_price', 'spot_per_kwh')|float]) -%}
-              {%- for hours in today -%}
-                {%- if 'nem_date' in hours and 'spot_per_kwh' in hours -%}
-                  {%- set ns.fit = ns.fit + [hours.spot_per_kwh] -%}
-                {%- endif -%}
+            {%- set data = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
+            {%- if data is iterable -%}
+              {%- set ns = namespace(arr=[]) -%}
+              {%- for rec in data -%}
+                {%- set price = rec.spot_per_kwh if rec.spot_per_kwh is defined else none -%}
+                {%- set ns.arr = ns.arr + [price | float(0.0)] -%}
               {%- endfor -%}
-              {{- ns.fit -}}
+              {{- ns.arr -}}
             {%- else -%}
-              {{- state_attr('sensor.amber_forecast', 'fit_price') if state_attr('sensor.amber_forecast', 'fit_price') is defined else 'unavailable' -}}
+              {{- state_attr('sensor.amber_forecast','fit_price') if state_attr('sensor.amber_forecast','fit_price') else [] -}}
             {%- endif -%}
-
           renewables_percent: >-
-
-            {%- set nem_date = state_attr('sensor.amber12ayrst_general_price', 'nem_date') -%}
-            {%- set today = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
-            {%- if nem_date is defined and today is defined and today is iterable -%}
-              {%- set ns = namespace(renewables = [state_attr('sensor.amber12ayrst_general_price', 'renewables')|float]) -%}
-              {%- for hours in today -%}
-                {%- if 'nem_date' in hours and 'renewables' in hours -%}
-                  {%- set ns.renewables = ns.renewables + [hours.renewables] -%}
-                {%- endif -%}
+            {%- set data = state_attr('sensor.amber12ayrst_general_forecast', 'forecasts') -%}
+            {%- if data is iterable -%}
+              {%- set ns = namespace(arr=[]) -%}
+              {%- for rec in data if rec.renewables is defined -%}
+                {%- set ns.arr = ns.arr + [rec.renewables | float(0.0)] -%}
               {%- endfor -%}
-              {{- ns.renewables -}}
+              {{- ns.arr -}}
             {%- else -%}
-              {{- state_attr('sensor.amber_forecast', 'renewables_percent') if state_attr('sensor.amber_forecast', 'renewables_percent') is defined else 'unavailable' -}}
+              {{- state_attr('sensor.amber_forecast','renewables_percent') 
+                  if state_attr('sensor.amber_forecast','renewables_percent') else [] -}}
             {%- endif -%}
 
 # -----------------------------------------------------------------------------

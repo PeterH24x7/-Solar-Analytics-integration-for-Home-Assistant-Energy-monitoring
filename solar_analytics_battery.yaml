@@ -1,12 +1,15 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 10 DRAFT <<< BATTERY STORAGE SOLUTION 
+# >>> RELEASE 10 FINAL <<< BATTERY STORAGE SOLUTION 
+#
+# Release 10 hardens all template sensors against loops, resets, startup conditions and 
+# invalid data while preserving backward-compatible behaviour. See update notes for more info.
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 #
 # Configurations:
 #                 - solar_analytics_3phase.yaml - consumed and generated sensors only.
-#     [THIS FILE] - solar_analytics_battery.yaml - includes consumed, generated
-#                     and battery sensors. NEW 27-Jan-25.
+#     [THIS FILE] - solar_analytics_battery.yaml [NEW 27-Jan-25] - includes consumed, generated
+#                     and battery sensors.
 #                 - solar_analytics.yaml - consumed and generaged, plus load sensors for 
 #                     hot_water, air_conditioner, ev_charger and stove.
 #                     Note: other known, but not implemented, SA load types include load_lighting
@@ -19,102 +22,19 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 13-Dec-25 as Release 10 DRAFT - see update notes below.
+# Last updated: 5-Jun-26 as Release 10 - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
-#                 - Added power reporting (last 5 minute average).
-#     16-Jul-2022 - RELEASE 2
-#                 - Enabled more accurate and more frequent 1 minute power reporting
-#                 - Added 5 minute energy updates for all channels
-#                 - Moved sa_site_id to secrets.yaml.
-#     20-Aug-2022 - RELEASE 3
-#                 - Added some error checking to deal with daily energy total errors when the 
-#                   data get is 'unavailable' or 'unknown'
-#                 - Removed "force_update: true" - where the data get may be 'unavailable'
-#                 - Removed "state_class: measurement" and "device_class: energy" for rest platform 
-#                   sensors (not applicable)
-#     10-Feb-2023 - RELEASE 4
-#                 - Added "unique_id" to each sensor entity (including existing) to enable HA 
-#                   Lovelace based settings changes.
-#                 - Added new "Total Energy Generated Expected" sensor to provide daily cumulative 
-#                   expected energy (as per the Solar Analytics portal).
-#                 - Added kW sensors as conversions of their respective W counterpart (note: not 
-#                   required for energy entities as of HA 2023.2).
-#                 - Where HA EM is used for cost calculations added "Todays Energy Total Net Cost" 
-#                   (import cost minus feed-in revenue).
-#                 - For those on variable energy rates (e.g. Amber) created new sensors "Todays Energy 
-#                   Import Rate" and "Todays Energy Export Rate".
-#     10-Apr-2023 - RELEASE 5
-#                 - Added "unique_id" to each REST sensor.
-#                 - Implemented token authentication with timer based refresh using username/password.
-#                 - Updated REST sensors to use token authentication.
-#                 - Changed sa_live_site_data to 60s scan_interval (avoid repeated update at 30s 
-#                   interval where data actually only changes every minute - some users may consider 
-#                   changing back to 30s to reduce the delay to update).
-#                 - Added time_stamp attribute to sa_todays_energy_total_net_cost, 
-#                   sa_todays_energy_import_rate and sa_todays_energy_export_rate.
-#                 - Added 3x new sensors sa_todays_energy_consumed_solar (Wh), 
-#                   sa_todays_generated_consumed_percentage (%) and 
-#                   sa_todays_consumed_generated_percentage (%).
-#                 - Added automation sa_refresh_all_rest_gets to manually force refesh of all REST 
-#                   data gets.
-#                 - Added sa_todays_electric_vehicle_generated and sa_todays_electric_vehicle_imported as
-#                   breakdown of the daily EV charging energy into generated and imported sourced energy.
-#                   Does not include EV charger standby energy and the sum of these sensors may differ
-#                   slightly from sa_todays_electric_vehicle_total. Attributes include last 5 minute
-#                   energy and % of total.
-#                 - Modified all REST gets from template platform rest to RESTful sensors. Required to 
-#                   solve overflowing attributes.data for sa_data_by_5min. Also resolves many of the
-#                   sensor unit issues (ie. Wh/kWh and W/kW).
-#                 - Added Energy history sensor for graphing each SA channel (e.g. in Apex Charts).
-#                   Note: results are 5 minute average power (kW), with area under the graph being the energy
-#                   usage within that time interval. The time duration is limited to 28x 5 minute intervals
-#                   (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
-#                   Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
-#                   the number of intervals if that's desireable, but at a lower resolution.
-#       24-Aug-23 - RELEASE 6.2 - MINOR FIXES, IMPROVED ERROR CHECKING AND CODE TIDY-UP
-#                 - sa_data_by_5min_meter_reset is depracated as not used/required (separate Amber code
-#                   has own midnight meter trigger). Uncomment if still required.
-#                 - sa_data_by_5min_exported_total and sa_data_by_5min_consumed_solar_total added error
-#                   and generated negative value testing.
-#                 - sa_data_by_5min_load_ev_charger_generated and sa_data_by_5min_load_ev_charger_imported
-#                   corrected calculation - minor missing logic.
-#                 - sa_data_by_5min_history_time_stamp_count added time_stamp attribute.
-#                 - sa_todays_electric_vehicle_generated and sa_todays_electric_vehicle_imported corrected
-#                   calculations for ev_energy_last5min attribute.
-#                 - sa_todays_generated_consumed_percentage and sa_todays_consumed_generated_percentage
-#                   fixed calculation logic where total energy generated at start of the day
-#                   could be negative (i.e. the inverter has consumed energy at start-up).
-#                 - general improved error checking using is_number (instead of is defined) and providing
-#                   float(0.0) and int(0) default values.
-#                 - added comment markers for begin/end code to be deleted for 3-phase implementation.
-#                 - general code tidy-up, layout consistency and readability improvements.
-#       31-Aug-23 - RELEASE 6.3 - MINOR FIXES for anomalous data gets.
-#                 - Enhanced data checking for sa_data_by_5min... REST get related sensors where the data's 
-#                   first entry [0] was strangely found to contain 'null' data, but subsequent data [1]+ 
-#                   all okay.
-#       7-Feb-24  - RELEASE 7
-#                 - Address SA data get anomoly where first record [0] contains 'null' data for 
-#                   energy_generated, energy_consumed etc.
-#                 - Added new sensor sa_status_log_entry that gets the site fault status (if not okay). 
-#                   Fault related details are in the sensor attributes.
-#       12-Oct-24 - RELEASE 8--
-#                 - Updated code comments as applicable. Deleted old dated commentary.
-#                 - Fixes to improve error checking for value_json.data and unexpected null values.
-#                   Refer Github issue "Periods of offline aren't handled well in the 5min sensors" raised 
-#                   by aaronpowell on 27-Sep-24.
-#                 - Added 3x automation triggers sa_data_by_5min_trigger, sa_live_site_data_trigger,
-#                   sa_data_by_hour_trigger to optimise the timing of the respective data gets which
-#                   otherwise start arbitrarily on restart/reload. To avoid mini get-storms resulting
-#                   from this code, the gets are distributed at appropriate intervals.
-#                 - Updated site_status get with extra attributes (per @aaronpowell).
+#                   ...
+#     2022 - 2024 - Old redundant release notes deleted.
+#                   ...
 #       10-Feb-25 - RELEASE 9 - NEW BATTERY VERSION [THIS FILE]
 #                 - Added new history sensor - sa_data_by_5min_history_imported_exported. Included as
 #                   new attribute in sa_todays_energy_history. 
 #                 - Modified sa_data_by_5min_history_energy_generated to only include +ve values.
-#                 - This configuration is a branch of the solar_analytics.yaml file. It adds a range
-#                   of battery related energy sensors in lieu of the load sensors.
+#                 - This configuration is an additive branch of the solar_analytics_3phase.yaml file. It 
+#                   adds a range of battery related energy sensors in lieu of the load sensors.
 #                     - Total Energy Consumed (modified) - household including battery in/out energy
 #                     - Total Energy Consumed Home - household excluding battery in/out energy
 #                       - Total Energy Consumed Home Imported - consumed household energy that was imported
@@ -133,8 +53,24 @@
 #                     - Power Battery - power into (-ve) and out of (+ve) the battery.
 #                 - Added last5min energy attribute to sa_todays_xloadx_total and 
 #                   sa_todays_energy_imported/exported sensors. Units are Wh.
-#       13-Dec-25 - Changes meet modern template sensor format (old format to be deprecated 30-Jun-26).
-#                 - Basic code tidy-up deleting redundant/old commentary.
+#        5-Jun-26 - RELEASE 10 - MAJOR INTERNAL OVERALL, BUT EXTERNALLY UNCHANGED BEHAVIOUR
+#                 - Migrated to modern template sensor patterns for future HA compatibility.
+#                 - Fixed generation allocation logic to suppress negative xx_energy_last5min 
+#                   generation attributes, ensuring physically valid solar contribution and more 
+#                   accurate cost attribution.
+#                 - Enhanced history sensors to mask invalid periods (all-zero/none data) by 
+#                   persisting and reusing the last valid value, improving continuity and visual 
+#                   accuracy of energy trends
+#                 - Added change-guard logic to prevent unnecessary and repeated state updates.
+#                 - Implemented reset-aware handling to correctly manage midnight and transient 
+#                   low-value sensor "rounding noise" change conditions.
+#                 - Added numeric-safe fallback handling to ensure valid sensor states during 
+#                   startup.
+#                 - Eliminated template loops using `this.state` and state-preserving update logic
+#                   for non-raw energy (e.g. sa_todays_...) and power (e.g. sa_consumed_power) 
+#                   sensors.
+#                 - Improved overall data validation, stability and resilience across all sensors.
+#                 - Maintained full backward compatibility of entity names, outputs and dashboards.
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -183,7 +119,6 @@
 #
 # -----------------------------------------------------------------------------
 
-
 # -----------------------------------------------------------------------------
 # INPUT_TEXT
 input_text:
@@ -217,11 +152,13 @@ automation:
           hours: 0
           minutes: 0
           seconds: 5
-    condition: []
+    condition: 
+      - condition: template
+        value_template: "{{- states('sensor.sa_auth_token')|is_number -}}"
     action:
       - service: timer.start
         data:
-          duration: "{{- states('sensor.sa_auth_token') | int -}}"
+          duration: "{{- states('sensor.sa_auth_token')|int(0) -}}"
         target:
           entity_id: timer.sa_token_expiry_timer
     mode: single
@@ -248,13 +185,17 @@ automation:
     mode: single
 
   # Automated trigger for sa_data_by_5min_... sensors - fires every 5 minutes.
+  ##### In case of network problems add 1min extra offset as follows:
+  ##### >>>>> condition: "{{- ( (now().minute + 1) is divisibleby(5) ) and ( ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) -}}"
   - id: "sa_data_by_5min_trigger"
     alias: SA Data by 5min Trigger
     description: "Every 5 minutes trigger offset by 3 minutes (e.g. 3, 8, 13) plus offset by multiples of 10s of seconds"
     trigger:
       - platform: time_pattern
         seconds: "/10"
-    condition: "{{- ( (now().minute + 2) is divisibleby(5) ) and ( ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) -}}"
+    condition: >-
+      {{- ( (now().minute + 2) is divisibleby(5) ) 
+          and ( ( ( now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) -}}
     action:
       - service: homeassistant.update_entity
         data: {}
@@ -269,7 +210,9 @@ automation:
     trigger:
       - platform: time_pattern
         seconds: "/5"
-    condition: "{{- ( (now().second // 10) >= 3 ) and ( (now().second // 5) + (states('input_text.sa_site_id')|int(0) % 6) == 11 ) -}}"
+    condition: >-
+      {{- ( (now().second // 10) >= 3 ) 
+          and ( (now().second // 5) + (states('input_text.sa_site_id')|int(0) % 6) == 11 ) -}}
     action:
       - service: homeassistant.update_entity
         data: {}
@@ -285,7 +228,8 @@ automation:
       - platform: time_pattern
         minutes: "11"
         seconds: "/10"
-    condition: "{{- ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 -}}"
+    condition: >-
+      {{- ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 -}}
     action:
       - service: homeassistant.update_entity
         data: {}
@@ -293,13 +237,11 @@ automation:
           entity_id: sensor.sa_data_by_hour_time_stamp
     mode: single
 
-  # Home Assistant start-up and optional manual trigger to refresh all SA get sensors.
+  # Home Assistant manual trigger to refresh all SA get sensors.
   - id: "sa_refresh_all_rest_gets"
     alias: SA Refresh all REST data gets
-    description: "Start-up automation that can be manually run to refresh all REST data gets."
-    trigger:
-      - platform: homeassistant
-        event: start
+    description: "Useful start-up automation that can be manually run to refresh all REST data gets."
+    trigger: []
     condition: []
     action:
       - service: homeassistant.update_entity
@@ -332,6 +274,8 @@ rest:
         json_attributes:
           - "token"
           - "expires"
+        availability: >-
+          {{- (value_json is defined and value_json.token is defined) -}}
 
   #
   # Solar Analytics - get the site details associated with the given user account login.
@@ -363,6 +307,12 @@ rest:
           - "capacity"
           - "devices"
           - "sub_type"
+        availability: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {{- (value_json.data|list|length) > 0 -}}
+          {%- else -%}
+            false
+          {%- endif -%}
 
   #
   # Solar Analytics - get the site status for the specified site_id.
@@ -372,8 +322,9 @@ rest:
   #   Decided against use of unsupported v4 (not in public API, reporting showed 
   #   some inconsistency w/ v3).
   #
-  - resource_template: https://portal.solaranalytics.com.au/api/v3/site_status/{{-
-      states('input_text.sa_site_id') 
+  - resource_template:
+      https://portal.solaranalytics.com.au/api/v3/site_status/{{-
+      states('input_text.sa_site_id')
       -}}
     headers: 
       Authorization: >-
@@ -382,7 +333,12 @@ rest:
     sensor:
       - name: sa_status
         unique_id: sa_status
-        value_template: "{{- value_json['data']['mer_status'] -}}"
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {{- value_json.data.mer_status -}}
+          {%- else -%}
+            Invalid
+          {%- endif -%}
         json_attributes_path: "$.data"
         json_attributes:
           - "dashboard_status"
@@ -399,25 +355,31 @@ rest:
 
           - "event_id"
           - "event_list"
+        availability: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {{- (value_json.data.mer_status is defined) -}}
+          {%- else -%}
+            false
+          {%- endif -%}
 
   #
   # Solar Analytics - get the site fault status for the specified site_id.
   # Updated every 5 minutes.
   #
   # Note: this is not a published API 'get', but is used by the SA portal to show a sites fault status (if any).
-  - resource_template: https://portal.solaranalytics.com.au/api/v4/site_status/{{-
+  - resource_template:
+      https://portal.solaranalytics.com.au/api/v4/site_status/{{-
       states('input_text.sa_site_id')
       -}}?event_group=all
     headers:
       Authorization: >-
         {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
     scan_interval: 300
-
     sensor:
       - name: sa_status_log_entry
         unique_id: sa_status_log_entry
         value_template: >-
-          {%- if (value_json is defined) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
             {%- set log_entry = value_json.data.event_list[0].fault_status|lower -%}
           {%- else -%}
             {%- set log_entry = "invalid" -%}
@@ -433,7 +395,7 @@ rest:
           {%- if log_entry in status_map -%}
             {{- status_map[log_entry] -}}
           {%- else -%}
-            {{- log_entry -}} returned
+            {{- log_entry -}}
           {%- endif -%}
         json_attributes_path: "$.data.event_list.[0]"
         json_attributes:
@@ -446,12 +408,19 @@ rest:
           - "event_type"
           - "fault_type"
           - "fault_class"
+        availability: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {{- (value_json.data.event_list|list|length > 0) -}}
+          {%- else -%}
+            false
+          {%- endif -%}
 
   #
   # Solar Analytics - get 5 minute energy data.
   # Used to calculate today's cumulative total energy for consumed, generated, imported and exported
   # energy as used by the HA Energy module.
-  # Updated every 5 minutes.
+  #
+  # Updated on startup and every 5 minutes according to sa_data_by_5min_trigger.
   #
   - resource_template: https://portal.solaranalytics.com.au/api/v2/site_data/{{-
       states('input_text.sa_site_id')
@@ -464,453 +433,526 @@ rest:
       Authorization: >-
         {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
     scan_interval: 0
-
     # REST SENSORS FOR sa_data_by_5min...
     sensor:
 
       # Timestamp of the latest energy data.
-      # Return values: latest time stamp if available, else "unavailable".
+      # Return values: latest time_stamp if available, else previous time_stamp, default "none".
+      #
+      # Return values: latest time stamp else none if not available.
       #
       - name: sa_data_by_5min_time_stamp
         unique_id: sa_data_by_5min_time_stamp
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(time_stamp="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( time_stamp=none ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.energy_consumed is number) -%}
-                {%- set energy.time_stamp = sensor_data.t_stamp -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.time_stamp = sensor_data.t_stamp -%}
               {%- endif -%}
-            {%- endfor -%}
-            {{- energy.time_stamp -}}
+            {%- endfor -%} 
+            {{- ns.time_stamp -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       # Sensor that indicates that the energy sensors have reset to a single record
       # Should only occur at midnight each day, but may also occur if there are no recordings early in the day.
-      # Return values: non-boolean "False" if not reset, "True" if reset. Returns "unavailable" if no data.
+      #
+      # Return values: non-boolean "False" if not reset, "True" if reset. Is none if unavailable.
       #
       - name: sa_data_by_5min_meter_reset
         unique_id: sa_data_by_5min_meter_reset
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {{- "True" if ns.last_data <= 1 else "False" -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
         json_attributes_path: "$.data[0]"
         json_attributes: "t_stamp"
+        availability: >-
+          {{- value_json is defined and value_json.data is defined -}}
 
       # The last 5 minutes energy by sensor type per Solar Analytics channel.
       # These sensors may be useful for calculating energy cost where energy costs vary at intervals down
       # to 5 minutes (e.g. Amber Electric). The may also be useful for configuring "Utility Meter" helpers in HA.
-      # Return values: numeric if available, else "unavailable"
+      #
+      # Return values: numeric if available, else none if not available.
       #
       - name: sa_data_by_5min_energy_consumed
         unique_id: sa_data_by_5min_energy_consumed
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(consumed="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( consumed=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.energy_consumed is number) -%}
-                {##- if (sensor_data.energy_consumed|float(0.0)) > 0.0 -##}
-                  {%- set energy.consumed = sensor_data.energy_consumed -%}
-                {##- else -##}
-                  {##- set energy.consumed = 0.0 -##}
-                {##- endif -##}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- if (sensor_data.energy_consumed|float(0.0)) > 0.0 -%}
+                  {%- set ns.consumed = sensor_data.energy_consumed -%}
+                {%- else -%}
+                  {%- set ns.consumed = 0.0 -%}
+                {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.consumed|round(4)
-                if energy.consumed is number
-                else "unavailable" -}}
+            {{- ns.consumed|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_energy_generated
         unique_id: sa_data_by_5min_energy_generated
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(generated="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( generated=none ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.energy_generated is number) -%}
+              {%- if ('energy_generated' in sensor_data and sensor_data.energy_generated is number) -%}
                 {%- if (sensor_data.energy_generated|float(0.0)) > 0.0 -%}
-                  {%- set energy.generated = sensor_data.energy_generated -%}
+                  {#- Only positive generation contributes -#}
+                  {%- set ns.generated = sensor_data.energy_generated -%}
                 {%- else -%}
-                  {%- set energy.generated = 0.0 -%}
+                  {%- set ns.generated = 0.0 -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.generated|round(4) 
-                if energy.generated is number
-                else "unavailable" -}}
+            {{- ns.generated|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_generated','defined')|
+                map(attribute='energy_generated')|select('is_number')|list|length ) > 0 -}}
 
-### BATTERY STORAGE - START >>>>>>>>>>
+      - name: sa_data_by_5min_imported
+        unique_id: sa_data_by_5min_imported
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( imported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                  {%- set ns.battery = sensor_data.battery_storage -%}
+                {%- endif -%}
+                {#- Only positive generation contributes -#}
+                {%- if ('energy_generated' in sensor_data and sensor_data.energy_generated is number)
+                      and (sensor_data.energy_generated|float(0.0) > 0.0) -%}
+                  {%- set ns.generated = sensor_data.energy_generated -%}
+                {%- endif -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + ( ns.battery|float(0.0) * 2.0 )|float(0.0) -%}
+                {%- if ns.consumed_home|float(0.0) + ns.battery|float(0.0) >= ns.generated|float(0.0) -%}
+                  {%- set ns.imported = ns.consumed_home|float(0.0) + ns.battery|float(0.0) - ns.generated|float(0.0) -%}
+                  {%- else -%}
+                    {%- set ns.imported = 0.0 -%}
+                  {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.imported|float(0.0)|round(4) -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_exported
+        unique_id: sa_data_by_5min_exported
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                  {%- set ns.battery = sensor_data.battery_storage -%}
+                {%- endif -%}
+                {#- Only positive generation contributes -#}
+                {%- if ('energy_generated' in sensor_data and sensor_data.energy_generated is number)
+                      and (sensor_data.energy_generated|float(0.0) > 0.0) -%}
+                  {%- set ns.generated = sensor_data.energy_generated -%}
+                {%- endif -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + ( ns.battery|float(0.0) * 2.0 )|float(0.0) -%}
+                {%- if ns.generated|float(0.0) > ns.consumed_home|float(0.0) - ns.battery|float(0.0) -%}
+                  {%- set ns.exported = ns.battery|float(0.0) + ns.generated|float(0.0) - ns.consumed_home|float(0.0) -%}
+                {%- else -%}
+                  {%- set ns.exported = 0.0 -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.exported|float(0.0)|round(4) -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
       # Household energy consumption excluding battery storage input or output.
       - name: sa_data_by_5min_energy_consumed_home
         unique_id: sa_data_by_5min_energy_consumed_home
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(consumed="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( consumed_home=0.0, consumed=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed =  
-                      sensor_data.energy_consumed|float 
-                    + ( sensor_data.battery_storage|default(0.0)|float * 2.0 )
-                  -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.consumed = sensor_data.energy_consumed|float(0.0) -%}
+                {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                  {%- set ns.battery = sensor_data.battery_storage -%}
+                {%- endif -%}
+                {#- Battery storage contribution (charge/discharge correction) -#}
+                {%- set ns.consumed_home = ns.consumed + (ns.battery * 2.0) -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.consumed|round(4)
-                if energy.consumed is number
-                else "unavailable" -}}
+            {{- ns.consumed_home|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       # Last 5 minute energy in/out of the battery.
+      #
       # Negative - charge in
       # Positive - discharging
       #
       - name: sa_data_by_5min_battery_storage
         unique_id: sa_data_by_5min_battery_storage
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(battery="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.battery_storage is number) -%}
-                {%- set energy.battery = sensor_data.battery_storage|float -%}
+              {#- Only process valid numeric battery values -#}
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|float(0.0) -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.battery|round(4) 
-                if energy.battery is number
-                else "unavailable" -}}
+            {{- ns.battery|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
-
-      - name: sa_data_by_5min_imported
-        unique_id: sa_data_by_5min_imported
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( imported="unavailable", consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|float 
-                      + ( sensor_data.battery_storage|float * 2.0
-                          if sensor_data.battery_storage is number else 0.0 ) -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.consumed_home|float + energy.battery|float
-                        >= energy.generated|float -%}
-                  {%- set energy.imported = 
-                      + energy.consumed_home|float + energy.battery|float - energy.generated|float -%}
-                  {%- else -%}
-                    {%- set energy.imported = 0.0 -%}
-                  {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.imported|round(4) 
-                if energy.imported is number
-                else "unavailable" -}}
-          {%- else -%}
-            unavailable
-          {%- endif -%}
-
-      - name: sa_data_by_5min_exported
-        unique_id: sa_data_by_5min_exported
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( exported="unavailable", consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.battery|float >= 0.0 -%}
-                  {%- if ( energy.generated|float > energy.consumed_home|float ) 
-                          or ( energy.consumed_home|float < energy.battery|float + energy.generated|float ) -%}
-                    {%- set energy.exported = 
-                          + energy.battery|float + energy.generated|float - energy.consumed_home|float -%}
-                  {%- else -%}
-                    {%- set energy.exported = 0.0 -%}
-                  {%- endif -%}
-                {%- else -%}
-                  {%- if energy.generated|float > energy.consumed_home|float - energy.battery|float -%}
-                    {%- set energy.exported = 
-                          + energy.generated|float - ( energy.consumed_home|float - energy.battery|float ) -%}
-                  {%- else -%}
-                    {%- set energy.exported = 0.0 -%}
-                  {%- endif -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.exported|round(4) 
-                if energy.exported is number
-                else "unavailable" -}}
-          {%- else -%}
-            unavailable
-          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
 
       # Daily cumulative total "raw" sensors per Solar Analytics channel reset at midnight.
       # These sensors are used for feeding "fully configured" template sensors defined further down below.
-      # Return values: numeric if available, else previous value else "unavailable"
+      #
+      # Return values: numeric if available, else previous value else default 0.0.
       #
       - name: sa_data_by_5min_energy_consumed_total
         unique_id: sa_data_by_5min_energy_consumed_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(consumed=0.0) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( consumed=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number 
-
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) 
+                    and (sensor_data.energy_consumed|float(0.0) > 0.0) 
                 -%}
-                {%- set energy.consumed = energy.consumed|float + sensor_data.energy_consumed|float -%}
+                {%- set ns.consumed = ns.consumed|float(0.0) + sensor_data.energy_consumed|float(0.0) -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.consumed|round(4) -}}
+            {{- ns.consumed|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_consumed_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_energy_consumed_total')|float(0.0) -}}
           {%- endif -%}
-
-      # Household energy consumption excluding battery storage input or output.
-      - name: sa_data_by_5min_energy_consumed_home_total
-        unique_id: sa_data_by_5min_energy_consumed_home_total
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(consumed=0.0) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed = energy.consumed|float 
-                      + sensor_data.energy_consumed|float 
-                      + ( sensor_data.battery_storage|default(0.0)|float * 2.0 )
-                  -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.consumed|round(4) -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_consumed_home_total.state|default("unavailable") -}}
-          {%- endif -%}
-
-      - name: sa_data_by_5min_energy_consumed_home_imported_total
-        unique_id: sa_data_by_5min_energy_consumed_home_imported_total
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( imported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.battery|float >= 0.0 -%}
-                  {%- if energy.consumed_home|float 
-                      > energy.generated|float + energy.battery|float -%}
-                    {%- set energy.imported = energy.imported|float
-                          + energy.consumed_home|float - ( energy.generated|float + energy.battery|float ) -%}
-                  {%- endif -%}
-                {%- else -%}
-                  {%- if energy.consumed_home|float 
-                      > energy.generated|float -%}
-                    {%- set energy.imported = energy.imported|float
-                          + energy.consumed_home|float - energy.generated|float -%}
-                  {%- endif -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.imported|round(4) -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_consumed_home_imported_total.state|default("unavailable") -}}
-          {%- endif -%}
-### BATTERY STORAGE - END <<<<<<<<<<
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_energy_generated_total
         unique_id: sa_data_by_5min_energy_generated_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(generated=0.0) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( generated=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.energy_generated is number) and (sensor_data.energy_generated|float > 0.0) -%}
-                {%- set energy.generated = energy.generated|float + sensor_data.energy_generated|float -%}
+              {#- Only positive generation contributes -#}
+              {%- if ('energy_generated' in sensor_data and sensor_data.energy_generated is number) 
+                    and (sensor_data.energy_generated|float(0.0) > 0.0) -%}
+                {%- set ns.generated = ns.generated|float(0.0) + sensor_data.energy_generated|float(0.0) -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.generated|round(4) -}}
+            {{- ns.generated|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_generated_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_energy_generated_total')|float(0.0) -}}
           {%- endif -%}
-
-### BATTERY STORAGE - START >>>>>>>>>>
-      - name: sa_data_by_5min_battery_storage_out_total
-        unique_id: sa_data_by_5min_battery_storage_out_total
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace(battery_out=0.0) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.battery_storage is number) and (sensor_data.battery_storage|float > 0.0) -%}
-                {%- set energy.battery_out = energy.battery_out|float + sensor_data.battery_storage|float -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.battery_out|round(4) -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_out_total.state|default("unavailable") -}}
-          {%- endif -%}
-
-      - name: sa_data_by_5min_battery_storage_in_total
-        unique_id: sa_data_by_5min_battery_storage_in_total
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( battery_in=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.battery_storage is number) and (sensor_data.battery_storage|float < 0.0) -%}
-                {%- set energy.battery_in = energy.battery_in|float - sensor_data.battery_storage|float 
-                  -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.battery_in|round(4) -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_in_total.state|default("unavailable") -}}
-          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_generated','defined')|
+                map(attribute='energy_generated')|select('is_number')|list|length ) > 0 -}}
 
       # Additional daily cumulative total "raw" sensors that reset at midnight.
       # These sensors are derived/calculated from the main Solar Analytics channels.
-      # Return values: numeric if available, else previous value else "unavailable"
+      #
+      # Return values: numeric if available, else previous value else default 0.0.
       #
       - name: sa_data_by_5min_imported_total
         unique_id: sa_data_by_5min_imported_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( imported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( imported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0)|float -%}
-                {%- if energy.consumed_home|float - energy.battery|float
-                        >= energy.generated|float -%}
-                  {%- set energy.imported = energy.imported|float 
-                      + energy.consumed_home|float - energy.battery|float - energy.generated|float -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + 2.0 * ns.battery|float(0.0) -%}
+                {#- Only positive generation contributes -#}
+                {%- set ns.generated = sensor_data.energy_generated|float(0.0) 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.consumed_home|float(0.0) - ns.battery|float(0.0)
+                        >= ns.generated|float(0.0) -%}
+                  {%- set ns.imported = ns.imported|float(0.0) 
+                      + ns.consumed_home|float(0.0) - ns.battery|float(0.0) - ns.generated|float(0.0) -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.imported|round(4) -}}
+            {{- ns.imported|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_imported_total.state|default("unavailable") -}} 
+            {{- states('sensor.sa_data_by_5min_imported_total')|float(0.0) -}} 
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_exported_total
         unique_id: sa_data_by_5min_exported_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.battery|float >= 0.0 -%}
-                  {%- if ( energy.generated|float > energy.consumed_home|float ) 
-                          or ( energy.consumed_home|float < energy.battery|float + energy.generated|float ) -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.battery|float + energy.generated|float - energy.consumed_home|float -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + 2.0 * ns.battery|float(0.0) -%}
+                {#- Only positive generation contributes -#}
+                {%- set ns.generated = sensor_data.energy_generated|float(0.0) 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.battery|float(0.0) >= 0.0 -%}
+                  {%- if ( ns.generated|float(0.0) > ns.consumed_home|float(0.0) ) 
+                          or ( ns.consumed_home|float(0.0) < ns.battery|float(0.0) + ns.generated|float(0.0) ) -%}
+                    {%- set ns.exported = ns.exported|float(0.0)
+                          + ns.battery|float(0.0) + ns.generated|float(0.0) - ns.consumed_home|float(0.0) -%}
                   {%- endif -%}
                 {%- else -%}
-                  {%- if energy.generated|float > energy.consumed_home|float - energy.battery|float -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.generated|float - ( energy.consumed_home|float - energy.battery|float ) -%}
+                  {%- if ns.generated|float(0.0) > ns.consumed_home|float(0.0) - ns.battery|float(0.0) -%}
+                    {%- set ns.exported = ns.exported|float(0.0)
+                          + ns.generated|float(0.0) - ( ns.consumed_home|float(0.0) - ns.battery|float(0.0) ) -%}
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.exported|round(4) -}}
+            {{- ns.exported|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_energy_exported_total.state|default("unavailable") -}} 
+            {{- states('sensor.sa_data_by_5min_exported_total')|float(0.0) -}} 
           {%- endif -%}
-
-      - name: sa_data_by_5min_exported_generated_total
-        unique_id: sa_data_by_5min_exported_generated_total
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.battery|float >= 0.0 -%}
-                  {%- if energy.generated|float > energy.consumed_home|float -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.generated|float
-                          - energy.consumed_home|float
-                      -%}
-                  {%- endif -%}
-                {%- else -%}
-                  {%- if energy.generated|float > energy.consumed_home|float - energy.battery|float -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.generated|float 
-                          - ( energy.consumed_home|float - energy.battery|float )
-                      -%}
-                  {%- endif -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- energy.exported|round(4) -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_exported_generated_total.state|default("unavailable") -}} 
-          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       # Additional "raw" sensor associated with the daily total of consumed energy that
       # has been generated from local sources (i.e. not imported).
-      # Return values: numeric if available, else previous value else "unavailable"
+      #
+      # Return values: numeric if available, else previous value else default 0.0.
       #
       - name: sa_data_by_5min_consumed_solar_total
         unique_id: sa_data_by_5min_consumed_solar_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( solar_consumed=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( solar_consumed=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.energy_consumed is number) -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}              
-                {%- if energy.consumed_home|float > 0.0 and energy.generated|float > 0.0 -%}
-                  {%- if energy.consumed_home|float
-                      > sensor_data.energy_generated|float 
-                    -%}
-                    {%- set energy.solar_consumed = energy.solar_consumed|float
-                          + sensor_data.energy_generated|float 
-                      -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + 2.0 * ns.battery|float(0.0) -%}
+                {#- Only positive generation contributes -#}
+                {%- set ns.generated = sensor_data.energy_generated|float(0.0) 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.consumed_home|float(0.0) > 0.0 and ns.generated|float(0.0) > 0.0 -%}
+                  {%- if ns.consumed_home|float(0.0)
+                      > sensor_data.energy_generated|float(0.0) -%}
+                    {%- set ns.solar_consumed = ns.solar_consumed|float
+                          + sensor_data.energy_generated|float(0.0) -%}
                   {%- else -%}
-                    {%- set energy.solar_consumed = energy.solar_consumed|float
-                          + energy.consumed_home|float
-                      -%}                    
+                    {%- set ns.solar_consumed = ns.solar_consumed|float
+                          + ns.consumed_home|float(0.0) -%}                  
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.solar_consumed|round(4) -}}
+            {{- ns.solar_consumed|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_consumed_solar_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_generated','defined')|
+                map(attribute='energy_generated')|select('is_number')|list|length ) > 0 -}}
+
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+      # Household energy consumption excluding battery storage input or output.
+      - name: sa_data_by_5min_energy_consumed_home_total
+        unique_id: sa_data_by_5min_energy_consumed_home_total
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( consumed_home=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.consumed_home = ns.consumed_home|float(0.0)
+                      + sensor_data.energy_consumed|float(0.0)
+                      + (sensor_data.battery_storage|default(0.0)|float(0.0) * 2.0) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.consumed_home|round(4) -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(0.0) -}}
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_energy_consumed_home_imported_total
+        unique_id: sa_data_by_5min_energy_consumed_home_imported_total
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( imported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + (ns.battery|float(0.0) * 2.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated|float(0.0) 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.battery|float(0.0) >= 0.0 -%}
+                  {%- if ns.consumed_home|float(0.0) 
+                      > ns.generated|float(0.0) + ns.battery|float(0.0) -%}
+                    {%- set ns.imported = ns.imported|float(0.0)
+                          + ns.consumed_home|float(0.0) - ( ns.generated|float(0.0) + ns.battery|float(0.0) ) -%}
+                  {%- endif -%}
+                {%- else -%}
+                  {%- if ns.consumed_home|float(0.0) 
+                      > ns.generated|float(0.0) -%}
+                    {%- set ns.imported = ns.imported|float(0.0)
+                          + ns.consumed_home|float(0.0) - ns.generated|float(0.0) -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.imported|float(0.0) -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_energy_consumed_home_imported_total')|float(0.0) -}}
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_battery_storage_out_total
+        unique_id: sa_data_by_5min_battery_storage_out_total
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery_out=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) 
+                    and (sensor_data.battery_storage|float(0.0) > 0.0) -%}
+                {%- set ns.battery_out = ns.battery_out|float(0.0) 
+                      + sensor_data.battery_storage|float(0.0) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.battery_out|float(0.0)|round(4) -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_battery_storage_out_total')|float(0.0) -}} 
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_battery_storage_in_total
+        unique_id: sa_data_by_5min_battery_storage_in_total
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery_in=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) 
+                  and (sensor_data.battery_storage|float(0.0) < 0.0) -%}
+                {%- set ns.battery_in = ns.battery_in|float(0.0) 
+                    - sensor_data.battery_storage|float(0.0) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.battery_in|float(0.0)|round(4) -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_battery_storage_in_total')|float(0.0) -}} 
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_exported_generated_total
+        unique_id: sa_data_by_5min_exported_generated_total
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + (ns.battery|float(0.0) * 2.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated|float(0.0) 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.battery|float(0.0) >= 0.0 -%}
+                  {%- if ns.generated|float(0.0) > ns.consumed_home|float(0.0) -%}
+                    {%- set ns.exported = ns.exported|float(0.0)
+                          + ns.generated|float(0.0) - ns.consumed_home|float(0.0) -%}
+                  {%- endif -%}
+                {%- else -%}
+                  {%- if ns.generated|float(0.0) > ns.consumed_home|float(0.0) - ns.battery|float(0.0) -%}
+                    {%- set ns.exported = ns.exported|float(0.0)
+                          + ns.generated|float(0.0) 
+                          - ( ns.consumed_home|float(0.0) - ns.battery|float(0.0) )
+                      -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.exported|float(0.0)|round(4) -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_exported_generated_total')|float(0.0) -}} 
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_generated','defined')|
+                map(attribute='energy_generated')|select('is_number')|list|length ) > 0 -}}
 
       # Additional "raw" sensors associated with Battery Storage charging broken down by generated
       # and imported energy sources.
@@ -919,130 +961,140 @@ rest:
       - name: sa_data_by_5min_battery_storage_in_generated_total
         unique_id: sa_data_by_5min_battery_storage_in_generated_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( battery_in=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery_in=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = - sensor_data.battery_storage|default(0.0)|float
-                      if sensor_data.battery_storage|default(0.0)|float < 0.0 else 0.0 -%}
-                {%- if energy.battery|float > 0.0 -%} 
-                  {%- if energy.generated|float 
-                      >= energy.consumed_home|float + energy.battery|float -%}
-                    {%- set energy.battery_in = energy.battery_in|float 
-                          + energy.battery|float -%}                      
-                  {%- elif energy.consumed_home|float 
-                      >= energy.generated|float -%}
-                  {%- elif energy.generated|float > energy.consumed_home|float -%}
-                    {%- set energy.battery_in = energy.battery_in|float 
-                          + energy.generated|float - energy.consumed_home|float -%}                  
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|default(0.0)|float(0.0) 
+                      + 2.0 * sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- set ns.battery = - sensor_data.battery_storage|default(0.0)|float(0.0)
+                      if sensor_data.battery_storage|default(0.0)|float(0.0) < 0.0 else 0.0 -%}
+                {%- if ns.battery|float(0.0) > 0.0 -%} 
+                  {%- if ns.generated|float(0.0) 
+                      >= ns.consumed_home|float(0.0) + ns.battery|float(0.0) -%}
+                    {%- set ns.battery_in = ns.battery_in|float(0.0) 
+                          + ns.battery|float(0.0) -%}                      
+                  {%- elif ns.consumed_home|float(0.0) >= ns.generated|float(0.0) -%}
+                    {#- Do nothing -#}
+                  {%- elif ns.generated|float(0.0) > ns.consumed_home|float(0.0) -%}
+                    {%- set ns.battery_in = ns.battery_in|float(0.0) 
+                          + ns.generated|float(0.0) - ns.consumed_home|float(0.0) -%}                  
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.battery_in|round(4) -}}
+            {{- ns.battery_in|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_battery_storage_in_imported_total
         unique_id: sa_data_by_5min_battery_storage_in_imported_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( battery_in=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery_in=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = - sensor_data.battery_storage|default(0.0)|float
-                      if sensor_data.battery_storage|default(0.0)|float < 0.0 else 0.0 -%}
-                {%- if energy.battery|float > 0.0 -%} 
-                  {%- if energy.generated|float 
-                      >= energy.consumed_home|float + energy.battery|float -%}
-                  {%- elif energy.consumed_home|float 
-                      >= energy.generated|float -%}
-                    {%- set energy.battery_in = energy.battery_in|float 
-                          + energy.battery|float -%}
-                  {%- elif energy.generated|float > energy.consumed_home|float -%}
-                    {%- set energy.battery_in = energy.battery_in|float 
-                          + energy.consumed_home|float + energy.battery|float
-                          - energy.generated|float 
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|default(0.0)|float(0.0) 
+                      + 2.0 * sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- set ns.battery = - sensor_data.battery_storage|default(0.0)|float(0.0)
+                      if sensor_data.battery_storage|default(0.0)|float(0.0) < 0.0 else 0.0 -%}
+                {%- if ns.battery|float(0.0) > 0.0 -%} 
+                  {%- if ns.generated|float(0.0) 
+                      >= ns.consumed_home|float(0.0) + ns.battery|float(0.0) -%}
+                      {#- Do nothing -#}
+                  {%- elif ns.consumed_home|float(0.0) 
+                      >= ns.generated|float(0.0) -%}
+                    {%- set ns.battery_in = ns.battery_in|float(0.0) 
+                          + ns.battery|float(0.0) -%}
+                  {%- elif ns.generated|float(0.0) > ns.consumed_home|float(0.0) -%}
+                    {%- set ns.battery_in = ns.battery_in|float(0.0) 
+                          + ns.consumed_home|float(0.0) + ns.battery|float(0.0)
+                          - ns.generated|float(0.0) 
                       -%}                  
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.battery_in|round(4) -}}
+            {{- ns.battery_in|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_battery_storage_in_imported_total')|float(0.0) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_battery_storage_out_consumed_total
         unique_id: sa_data_by_5min_battery_storage_out_consumed_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( battery=0.0, consumed_home=0.0, generated=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( battery=0.0, consumed_home=0.0, generated=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.battery_storage is number) and (sensor_data.battery_storage|float > 0.0) -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- if energy.consumed_home|float >= energy.generated|float + sensor_data.battery_storage|float -%}
-                  {%- set energy.battery = energy.battery
-                        + sensor_data.battery_storage|float
-                    -%}
-                {%- elif energy.generated|float < energy.consumed_home|float -%}
-                  {%- set energy.battery = energy.battery
-                        + energy.consumed_home|float 
-                        - energy.generated|float 
-                    -%}
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) 
+                  and (sensor_data.battery_storage|float(0.0) > 0.0) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|float(0.0) 
+                      + 2.0 * sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- if ns.consumed_home|float(0.0) >= ns.generated|float(0.0) + sensor_data.battery_storage|float(0.0) -%}
+                  {%- set ns.battery = ns.battery + sensor_data.battery_storage|float(0.0) -%}
+                {%- elif ns.generated|float(0.0) < ns.consumed_home|float(0.0) -%}
+                  {%- set ns.battery = ns.battery
+                        + ns.consumed_home|float(0.0) - ns.generated|float(0.0) -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.battery|round(4) -}}
+            {{- ns.battery|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_battery_storage_out_exported_total
         unique_id: sa_data_by_5min_battery_storage_out_exported_total
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set energy = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( exported=0.0, consumed_home=0.0, generated=0.0, battery=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set energy.consumed_home = sensor_data.energy_consumed|default(0.0)|float 
-                      + 2.0 * sensor_data.battery_storage|default(0.0)|float -%}
-                {%- set energy.generated = sensor_data.energy_generated 
-                      if sensor_data.energy_generated|default(0.0)|float > 0.0 else 0.0 -%}
-                {%- set energy.battery = sensor_data.battery_storage|default(0.0) -%}
-                {%- if energy.battery|float >= 0.0 -%}
-                  {%- if energy.generated|float > energy.consumed_home|float -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.battery|float 
-                      -%}
-                  {%- elif energy.consumed_home|float < energy.battery|float + energy.generated|float -%}
-                    {%- set energy.exported = energy.exported|float
-                          + energy.battery|float 
-                          + energy.generated|float
-                          - energy.consumed_home|float
-                      -%}
+              {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                {%- set ns.consumed_home = sensor_data.energy_consumed|default(0.0)|float(0.0) 
+                      + 2.0 * sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- set ns.generated = sensor_data.energy_generated 
+                      if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0 else 0.0 -%}
+                {%- set ns.battery = sensor_data.battery_storage|default(0.0)|float(0.0) -%}
+                {%- if ns.battery|float(0.0) >= 0.0 -%}
+                  {%- if ns.generated|float(0.0) > ns.consumed_home|float(0.0) -%}
+                    {%- set ns.exported = ns.exported|float(0.0) + ns.battery|float(0.0) -%}
+                  {%- elif ns.consumed_home|float(0.0) < ns.battery|float(0.0) + ns.generated|float(0.0) -%}
+                    {%- set ns.exported = ns.exported|float(0.0)
+                          + ns.battery|float(0.0) + ns.generated|float(0.0) - ns.consumed_home|float(0.0) -%}
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.exported|round(4) -}}
+            {{- ns.exported|float(0.0)|round(4) -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_battery_storage_out_exported_total.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_battery_storage_out_exported_total')|float(0.0) -}}
           {%- endif -%}
-### BATTERY STORAGE - END <<<<<<<<<<
-
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
 
       # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
       # The units are in kW.
@@ -1053,15 +1105,15 @@ rest:
       # Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
       # the number of intervals if that's desireable, but at a lower resolution.
       #
-      # Return values: numeric list if available, else previous numeric list else "unavailable"
+      # Return values: numeric array if available, else previous else empty array [].
       #
       - name: sa_data_by_5min_history_time_stamp
         unique_id: sa_data_by_5min_history_time_stamp
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[] ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
@@ -1073,176 +1125,203 @@ rest:
             {%- endfor -%}
             {{- ns.sensor_values -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_time_stamp.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_time_stamp')|default([]) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_history_energy_consumed
         unique_id: sa_data_by_5min_history_energy_consumed
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if sensor_data.energy_consumed is number -%}
-                  {%- set ns.sensor_values = ns.sensor_values 
-                      + [ ((sensor_data.energy_consumed|float)*12.0/1000)|round(2) ] -%}
-                {%- else -%}
-                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                  {%- set ns.current_value = ((sensor_data.energy_consumed|float)*12.0/1000)|float(0.0)|round(2) -%}
                 {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
               {%- endif -%}
             {%- endfor -%}
             {{- ns.sensor_values -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_energy_consumed.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_energy_consumed')|default([]) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_history_energy_generated
         unique_id: sa_data_by_5min_history_energy_generated
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if ( sensor_data.energy_generated is number )
-                      and ( sensor_data.energy_generated|float > 0.0 )
-                  -%}
-                  {%- set ns.sensor_values = ns.sensor_values 
-                      + [ ((sensor_data.energy_generated|float)*12.0/1000)|round(2) ] -%}
+                {%- if ('energy_generated' in sensor_data and sensor_data.energy_generated is number) -%}
+                  {%- if sensor_data.energy_generated|float(0.0) > 0.0 -%}
+                    {%- set ns.current_value = ((sensor_data.energy_generated|float)*12.0/1000)|float(0.0)|round(2) -%}
+                  {%- else -%}
+                    {#- Protect generated data from negative values (i.e. when the inverter is operating 
+                        without solar input) -#}
+                    {%- set ns.current_value = 0.0 -%}
+                  {%- endif -%}
                 {%- else -%}
-                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
                 {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
               {%- endif -%}
             {%- endfor -%}
             {{- ns.sensor_values -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_energy_generated.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_energy_generated')|default([]) -}}
           {%- endif -%}
-
-### BATTERY STORAGE - START >>>>>>>>>>
-      - name: sa_data_by_5min_history_battery_storage
-        unique_id: sa_data_by_5min_history_battery_storage
-        value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
-                {%- set ns.last_data = loop.index -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if sensor_data.battery_storage is number -%}
-                  {%- set ns.sensor_values = ns.sensor_values 
-                      + [ ((sensor_data.battery_storage|float)*12.0/1000)|round(2) ] -%}
-                {%- else -%}
-                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- ns.sensor_values -}}
-          {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_battery_storage.state|default("unavailable") -}}
-          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_generated','defined')|
+                map(attribute='energy_generated')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_history_imported_exported
         unique_id: sa_data_by_5min_history_imported_exported
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if (sensor_data.energy_consumed is number) -%}
-                  {%- set ns.sensor_values = ns.sensor_values 
-                      + [ ( ( sensor_data.energy_consumed|float 
-                              + sensor_data.battery_storage|default(0.0)|float
-                              - ( sensor_data.energy_generated
-                                    if ( sensor_data.energy_generated is number )
-                                      and ( sensor_data.energy_generated|float > 0.0 )
-                                    else 0.0
-                                  )|float
+                {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                  {%- set ns.current_value = ( ( sensor_data.energy_consumed|float(0.0) 
+                            + sensor_data.battery_storage|default(0.0)|float(0.0)
+                            - ( sensor_data.energy_generated
+                                  if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0
+                                  else 0.0
+                              )|float(0.0)
                             ) * 12.0 / 1000
-                          )|round(2) 
-                        ] 
+                          )|float(0.0)|round(2) 
                     -%}
                 {%- else -%}
-                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
                 {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
               {%- endif -%}
             {%- endfor -%}
             {{- ns.sensor_values -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_imported_exported.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_imported_exported')|default([]) -}}
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+      - name: sa_data_by_5min_history_battery_storage
+        unique_id: sa_data_by_5min_history_battery_storage
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.last_data = loop.index -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
+                {%- if ('battery_storage' in sensor_data and sensor_data.battery_storage is number) -%}
+                  {%- set ns.current_value = (sensor_data.battery_storage|float(0.0)*12.0/1000)|float(0.0)|round(2) -%}
+                {%- else -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
+                {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.sensor_values -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_history_battery_storage')|default([]) -}}
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery_storage','defined')|
+                map(attribute='battery_storage')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_history_energy_consumed_home
         unique_id: sa_data_by_5min_history_energy_consumed_home
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0,sensor_values=[]) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if sensor_data.energy_consumed is number -%}
-                  {%- set ns.sensor_values = ns.sensor_values 
-                      + [ ( ( sensor_data.energy_consumed|float 
-                            + ( sensor_data.battery_storage|float * 2
-                              if sensor_data.battery_storage is number
-                              else 0.0 
-                              ) 
-                            ) * 12.0 / 1000
-                          )|round(2) 
-                        ] 
-                    -%}
+                {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                  {%- set ns.current_value = ( ( sensor_data.energy_consumed|float(0.0) 
+                              + ( sensor_data.battery_storage|default(0.0)|float(0.0) * 2 ) 
+                            ) * 12.0 / 1000 )|round(2) -%}
                 {%- else -%}
-                  {%- set ns.sensor_values = ns.sensor_values + [ 0.0 ] -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
                 {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
               {%- endif -%}
             {%- endfor -%}
             {{- ns.sensor_values -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_energy_consumed_home.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_energy_consumed_home')|default([]) -}}
           {%- endif -%}
-### BATTERY STORAGE - END <<<<<<<<<<
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
 
       # A count of the number of time intervals since midnight. Used to calculate a long date/time
       # value for sa_todays_energy_history.
       #
+      # Return values: numeric if available, else previous value else default 0.
+      #
       - name: sa_data_by_5min_history_time_stamp_count
         unique_id: sa_data_by_5min_history_time_stamp_count
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(last_data=0) -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if sensor_data.energy_consumed is number -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                 {%- set ns.last_data = loop.index -%}
               {%- endif -%}
             {%- endfor -%}
             {{- ns.last_data -}}
           {%- else -%}
-            {{- states.sensor.sa_data_by_5min_history_time_stamp_count.state|default("unavailable") -}}
+            {{- states('sensor.sa_data_by_5min_history_time_stamp_count')|int(0) -}}
           {%- endif -%}
         json_attributes_path: "$.data[0]"
         json_attributes: "t_stamp"
-
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_consumed','defined')|
+                map(attribute='energy_consumed')|select('is_number')|list|length ) > 0 -}}
 
   #
   # Solar Analytics - get live per minute power data.
@@ -1251,142 +1330,167 @@ rest:
   # Note: this is not a published API 'get', but is used by the SA portal to display minute to
   # minute power for a site.
   #
-  - resource_template: https://portal.solaranalytics.com.au/api/v3/live_site_data?site_id={{-
+  # Updated on startup and every 1 minute according to sa_live_site_data_trigger.
+  #
+  - resource_template:
+      https://portal.solaranalytics.com.au/api/v3/live_site_data?site_id={{-
       states('input_text.sa_site_id')
       -}}&last_six=true
     headers:
       Authorization: >
         {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
     scan_interval: 0
-
     # REST SENSORS FOR sa_live_site_data...
     sensor:
 
       # Timestamp of the latest power data.
-      # Return values: latest time stamp if available, else "unavailable".
+      # Return values: latest time stamp if available, else none.
       #
       - name: sa_live_site_data_time_stamp
         unique_id: sa_live_site_data_time_stamp
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(t_stamp="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( t_stamp=none ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.consumed is number) -%}
+              {%- if ('consumed' in sensor_data and sensor_data.consumed is number) -%}
                 {%- set ns.t_stamp = as_timestamp(sensor_data.t_stamp)|timestamp_custom('%Y-%m-%d %H:%M:%S') -%}
               {%- endif -%}
             {%- endfor -%} 
-            {{- ns.t_stamp 
-                if ns.t_stamp is defined 
-                else "unavailable" -}}
+            {{- ns.t_stamp -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('consumed','defined')|
+                map(attribute='consumed')|select('is_number')|list|length ) > 0 -}}
 
       # Minutely updated "raw" power sensors as provided by Solar Analytics.
-      # Return values: numeric if available, else "unavailable"
+      #
+      # Return values: numeric if available, else none.
       #
       - name: sa_live_site_data_consumed
         unique_id: sa_live_site_data_consumed
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(power="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( power=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.consumed is number) -%}
+              {%- if ('consumed' in sensor_data and sensor_data.consumed is number) -%}
                 {%- set ns.power = sensor_data.consumed -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- ns.power|round(4) 
-                if ns.power is number 
-                else "unavailable" -}}
+            {{- ns.power|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('consumed','defined')|
+                map(attribute='consumed')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_live_site_data_generated
         unique_id: sa_live_site_data_generated
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(power="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( power=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.generated is number) -%}
-                {%- set ns.power = sensor_data.generated -%}
+              {%- if ('generated' in sensor_data and sensor_data.generated is number) -%}
+                {#- Only positive generation contributes -#}
+                {%- set ns.power = sensor_data.generated
+                                    if sensor_data.generated|default(0.0)|float(0.0) > 0.0 
+                                    else 0.0 -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- ns.power|round(4) 
-                if ns.power is number 
-                else "unavailable" -}}
+            {{- ns.power|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('generated','defined')|
+                map(attribute='generated')|select('is_number')|list|length ) > 0 -}}
 
       # Additional minutely updated "raw" sensor derived from Solar Analytics sourced data. A positive
       # value is power been drawn from the grid (imported) and a negative value is power being fed into
       # the grid (exported).
-      # Return values: numeric if available, else "unavailable"
       #
-### BATTERY STORAGE - START >>>>>>>>>>
       # Values for grid import are positive, values for export are negative.
+      #
+      # Return values: numeric if available, else none.
+      #
       - name: sa_live_site_data_imported_exported
         unique_id: sa_live_site_data_imported_exported
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(power="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( power=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.consumed is number) and (sensor_data.generated is number) -%}
-                {%- set ns.power = sensor_data.consumed|float 
-                      + ( sensor_data.battery
-                          if sensor_data.battery is number
-                          else 0.0 )|float
-                      - sensor_data.generated|float -%}
+              {%- if ('consumed' in sensor_data and sensor_data.consumed is number) -%}
+                {%- set consumed = sensor_data.consumed|float(0.0) -%}
+                {#- Only positive generation contributes -#}
+                {%- set generated = ( sensor_data.generated
+                                      if sensor_data.generated|default(0.0)|float(0.0) > 0.0 
+                                      else 0.0
+                                    )|float(0.0) -%}
+                {%- set battery = sensor_data.battery|default(0.0)|float(0.0) -%}
+                {%- set ns.power = consumed + battery - generated -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- ns.power|round(4) 
-                if ns.power is number 
-                else "unavailable" -}}
+            {{- ns.power|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('consumed','defined')|
+                map(attribute='consumed')|select('is_number')|list|length ) > 0 -}}
 
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
       # Values for battery storage output are positive, values for input are negative.
       - name: sa_live_site_data_battery
         unique_id: sa_live_site_data_battery
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(power="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( power=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.battery is number) -%}
+              {%- if ('battery' in sensor_data and sensor_data.battery is number) -%}
                 {%- set ns.power = sensor_data.battery -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- ns.power|round(4) 
-                if ns.power is number 
-                else "unavailable" -}}
+            {{- ns.power|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('battery','defined')|
+                map(attribute='battery')|select('is_number')|list|length ) > 0 -}}
 
       # Household energy consumption excluding battery storage input or output.
       - name: sa_live_site_data_consumed_home
         unique_id: sa_live_site_data_consumed_home
         value_template: >-
-          {%- if (value_json.data is defined) -%}
-            {%- set ns = namespace(power="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( power=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
-              {%- if (sensor_data.consumed is number) -%}
-                {%- set ns.power = sensor_data.consumed|float 
-                    + ( sensor_data.battery|float * 2
-                      if sensor_data.battery is number
-                      else 0.0 )
-                  -%}
+              {%- if ('consumed' in sensor_data and sensor_data.consumed is number) -%}
+                {%- set consumed = sensor_data.consumed|float(0.0) -%}
+                {%- set battery = sensor_data.battery|default(0.0)|float(0.0) -%}
+                {%- set ns.power = sensor_data.consumed + 2*battery -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- ns.power|round(4) 
-                if ns.power is number 
-                else "unavailable" -}}
+            {{- ns.power|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
-### BATTERY STORAGE - END <<<<<<<<<<
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('consumed','defined')|
+                map(attribute='consumed')|select('is_number')|list|length ) > 0 -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
 
   #
   # Solar Analytics - get hourly cumulative expected energy data for the day.
@@ -1395,6 +1499,8 @@ rest:
   # Notes: this is not a published API 'get', but is used by the SA portal.
   # The get also retrieves the daily total for the most recent hour for generated and consumed energy;
   # not required given 5 min updates of the same above. Checked every 30 minutes for changes in the last hour.
+  #
+  # Updated on startup and every 5 minutes according to sa_data_by_hour_trigger.
   #
   - resource_template: https://portal.solaranalytics.com.au/api/v2/site_data/{{-
       states('input_text.sa_site_id')
@@ -1407,601 +1513,1060 @@ rest:
       Authorization: >-
         {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
     scan_interval: 0
-
     # REST SENSORS FOR sa_data_by_hour_... sensor (just one).
     sensor:
 
-      # Return values: current time if data available, else "unavailable".
+      # Return values: current time if data available, else none.
+      #
+      # Note: rest get timestamp is only the current date - rather use the current date-time of the get.
+      #      {{- as_timestamp(value_json['data'][0].t_stamp)|timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}
       - name: sa_data_by_hour_time_stamp
         unique_id: sa_data_by_hour_time_stamp
         value_template: >-
-          {%- if value_json.data is defined -%}
-            {{- as_timestamp(now()) | timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {{- as_timestamp(now())|timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
-        # The rest get timestamp is only the current date - rather use the current date-time of the get.
-        #      {{- as_timestamp(value_json['data'][0].t_stamp) | timestamp_custom ('%Y-%m-%d %H:%M:%S') -}}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|map(attribute='energy_expected')|select('is_number')|list|length ) > 0 -}}
 
       # Total Energy Generated Expected
-      # Return values: numeric if available and positive, else 0.0 if negative, else "unavailable".
+      #
+      # Return values: numeric if available and positive, else 0.0 if negative, else none.
       #
       - name: sa_data_by_hour_generated_expected
         unique_id: sa_data_by_hour_generated_expected
         value_template: >-
-          {%- if value_json.data is defined -%}
-            {%- set energy = namespace(expected="unavailable") -%}
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( expected=0.0 ) -%}
             {%- for sensor_data in value_json.data -%}
               {%- if sensor_data.energy_expected is number -%}
-                {%- set energy.expected = sensor_data.energy_expected 
-                    if sensor_data.energy_expected|float > 0.0
-                    else 0.0 -%}
+                {%- set ns.expected = sensor_data.energy_expected 
+                    if sensor_data.energy_expected|float(0.0) > 0.0 -%}
               {%- endif -%}
             {%- endfor -%}
-            {{- energy.expected|round(4) 
-                if energy.expected is number
-                else "unavailable" -}}
+            {{- ns.expected|float(0.0)|round(4) -}}
           {%- else -%}
-            unavailable
+            none
           {%- endif -%}
-
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('energy_expected','defined')|
+                map(attribute='energy_expected')|select('is_number')|list|length ) > 0 -}}
 
 template:
-
-# -----------------------------------------------------------------------------
-# TEMPLATE SENSORS - updated 11-Dec-25
-  - sensor:
-
-      # Solar Analytics status sensors
-    - name: "Dashboard Status"
-      default_entity_id: sensor.sa_dashboard_status
-      unique_id: sa_dashboard_status
-      state: "{{- state_attr('sensor.sa_status', 'dashboard_status') -}}"
-
-    - name: "System Status"
-      default_entity_id: sensor.sa_mer_status
-      unique_id: sa_mer_status
-      state: "{{- state_attr('sensor.sa_status', 'mer_status') -}}"
-        
-    - name: "PV Performance"
-      default_entity_id: sensor.sa_mer_percentage
-      unique_id: sa_mer_percentage
-      state: "{{- state_attr('sensor.sa_status', 'mer_percentage') -}}"
-      unit_of_measurement: "%"
-
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        not_to:
+          - "unknown"
+          - "unavailable"
+        for: "00:00:02"
+    sensor:
       # Solar Analytics todays total energy sensors
       #
-      # Note state can go up/down in value, so state_class is measurement, not total_increasing,
-      # to avoid system log error.
-    - name: "Total Energy Consumed"
-      default_entity_id: sensor.sa_todays_energy_consumed_total
-      unique_id: sa_todays_energy_consumed_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_energy_consumed_total.state 
-              if states.sensor.sa_data_by_5min_energy_consumed_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:home-battery
-      device_class: "energy"
-      state_class: "measurement"
-      attributes:
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-          last5min: "{{- states.sensor.sa_data_by_5min_energy_consumed.state -}}"
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Total Energy Consumed"
+        default_entity_id: sensor.sa_todays_energy_consumed_total
+        unique_id: sa_todays_energy_consumed_total
+        unit_of_measurement: "Wh"
+        icon: "mdi:home-lightning-bolt-outline"
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {#- Read the new raw value from the upstream sensor (string) -#}
+          {%- set new = states('sensor.sa_data_by_5min_energy_consumed_total')|float(none) -%}
+          {#- Safely get the previous value of THIS sensor (no self-dependency loop) -#}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {#- Convert to numeric only after validating -#}
+            {%- set new_val = new|float(0.0) -%}
+            {#- --- Reset handling ---
+              If value drops to very small (<1) and below previous,
+              treat as a legitimate reset (e.g. midnight), BUT
+              only update if it has actually changed to avoid loops -#}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if new_val != old else this.state|float(0.0) -}}
+            {#- --- Normal operation ---
+              Allow updates only when the value increases (monotonic behaviour) -#}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {#- --- No change / invalid decrease ---
+              Return existing state WITHOUT rewriting to avoid loops -#}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {#- Input is invalid (e.g. unavailable) → preserve previous value -#}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: "{{- states('sensor.sa_data_by_5min_energy_consumed') -}}"
 
-    - name: "Total Energy Generated"
-      default_entity_id: sensor.sa_todays_energy_generated_total
-      unique_id: sa_todays_energy_generated_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_energy_generated_total.state 
-              if states.sensor.sa_data_by_5min_energy_generated_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:solar-power
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes: 
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: "{{- states.sensor.sa_data_by_5min_energy_generated.state -}}"
-
-### BATTERY STORAGE - START >>>>>>>>>>
-    - name: "Total Energy Consumed Home"
-      default_entity_id: sensor.sa_todays_energy_consumed_home_total
-      unique_id: sa_todays_energy_consumed_home_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_energy_consumed_home_total.state 
-              if states.sensor.sa_data_by_5min_energy_consumed_home_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:home-lightning-bolt-outline
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: "{{- states.sensor.sa_data_by_5min_energy_consumed_home.state -}}"
-
-    - name: "Total Energy Consumed Home Imported"
-      default_entity_id: sensor.sa_todays_energy_consumed_home_imported_total
-      unique_id: sa_todays_energy_consumed_home_imported_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_energy_consumed_home_imported_total.state 
-              if states.sensor.sa_data_by_5min_energy_consumed_home_imported_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:home-lightning-bolt-outline
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-
-    - name: "Total Battery Storage Energy Input"
-      default_entity_id: sensor.sa_todays_battery_storage_in_total
-      unique_id: sa_todays_battery_storage_in_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_battery_storage_in_total.state
-              if states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:battery-positive
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: >-
-            {{- -1.0 * states.sensor.sa_data_by_5min_battery_storage.state|float 
-                  if states.sensor.sa_data_by_5min_battery_storage.state|default(0.0)|float < 0.0 
-                  else 0.0 -}}
-
-    - name: "Total Battery Storage Energy Output"
-      default_entity_id: sensor.sa_todays_battery_storage_out_total
-      unique_id: sa_todays_battery_storage_out_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_battery_storage_out_total.state
-              if states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:battery-negative
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: >-
-            {{- states.sensor.sa_data_by_5min_battery_storage.state 
-                  if states.sensor.sa_data_by_5min_battery_storage.state|default(0.0)|float > 0.0 
-                  else 0.0 -}}
+      - name: "Total Energy Generated"
+        default_entity_id: sensor.sa_todays_energy_generated_total
+        unique_id: sa_todays_energy_generated_total
+        unit_of_measurement: "Wh"
+        icon: mdi:solar-power
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_energy_generated_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: "{{- states('sensor.sa_data_by_5min_energy_generated') -}}"
 
       # Solar Analytics derived total energy sensors
-    - name: "Total Energy Imported"
-      default_entity_id: sensor.sa_todays_energy_imported
-      unique_id: sa_todays_energy_imported
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_imported_total.state
-              if states.sensor.sa_data_by_5min_imported_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:transmission-tower-export
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes: 
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: "{{- states.sensor.sa_data_by_5min_imported.state -}}"
+      - name: "Total Energy Imported"
+        default_entity_id: sensor.sa_todays_energy_imported
+        unique_id: sa_todays_energy_imported
+        unit_of_measurement: "Wh"
+        icon: mdi:transmission-tower-export
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_imported_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: "{{- states('sensor.sa_data_by_5min_imported') -}}"
 
-    - name: "Total Energy Exported"
-      default_entity_id: sensor.sa_todays_energy_exported
-      unique_id: sa_todays_energy_exported
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_exported_total.state
-              if states.sensor.sa_data_by_5min_exported_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:transmission-tower-import
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes: 
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        last5min: "{{- states.sensor.sa_data_by_5min_exported.state -}}"
+      - name: "Total Energy Exported"
+        default_entity_id: sensor.sa_todays_energy_exported
+        unique_id: sa_todays_energy_exported
+        unit_of_measurement: "Wh"
+        icon: mdi:transmission-tower-import
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_exported_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: "{{- states('sensor.sa_data_by_5min_exported') -}}"
 
-    - name: "Total Energy Exported Generated"
-      default_entity_id: sensor.sa_todays_energy_exported_generated
-      unique_id: sa_todays_energy_exported_generated
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_exported_generated_total.state
-              if states.sensor.sa_data_by_5min_exported_generated_total.state|is_number
-              else this.state|default(0.0) -}}
-      icon: mdi:transmission-tower-import
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+      - name: "Total Energy Consumed Home"
+        default_entity_id: sensor.sa_todays_energy_consumed_home_total
+        unique_id: sa_todays_energy_consumed_home_total
+        unit_of_measurement: "Wh"
+        icon: mdi:home-lightning-bolt-outline
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: "{{- states('sensor.sa_data_by_5min_energy_consumed_home') -}}"
+
+      - name: "Total Energy Consumed Home Imported"
+        default_entity_id: sensor.sa_todays_energy_consumed_home_imported_total
+        unique_id: sa_todays_energy_consumed_home_imported_total
+        unit_of_measurement: "Wh"
+        icon: mdi:home-lightning-bolt-outline
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_energy_consumed_home_imported_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+
+      - name: "Total Battery Storage Energy Input"
+        default_entity_id: sensor.sa_todays_battery_storage_in_total
+        unique_id: sa_todays_battery_storage_in_total
+        unit_of_measurement: "Wh"
+        icon: mdi:battery-positive
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_in_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: >-
+              {{- -1.0 * states('sensor.sa_data_by_5min_battery_storage')|float(0.0) 
+                    if states('sensor.sa_data_by_5min_battery_storage')|default(0.0)|float(0.0) < 0.0 
+                    else 0.0 -}}
+
+      - name: "Total Battery Storage Energy Output"
+        default_entity_id: sensor.sa_todays_battery_storage_out_total
+        unique_id: sa_todays_battery_storage_out_total
+        unit_of_measurement: "Wh"
+        icon: mdi:battery-negative
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_out_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          last5min: >-
+              {{- states('sensor.sa_data_by_5min_battery_storage')|float(0.0) 
+                    if states('sensor.sa_data_by_5min_battery_storage')|default(0.0)|float(0.0) > 0.0 
+                    else 0.0 -}}
+
+      - name: "Total Energy Exported Generated"
+        default_entity_id: sensor.sa_todays_energy_exported_generated
+        unique_id: sa_todays_energy_exported_generated
+        unit_of_measurement: "Wh"
+        icon: mdi:transmission-tower-import
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_exported_generated_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+
+        #
+        # Battery Storage Energy In Generated and Imported
+        #
+        # Note: sa_todays_battery_storage_in_generated and sa_todays_battery_storage_in_imported only sum the Wh
+        # stored while actually charging. Charger standby energy consumption is not included, but will be
+        # apparent where the sum of the two sensors is slightly less than sa_todays_battery_storage_in_total.
+        #
+      - name: "Battery Storage Energy In Generated"
+        default_entity_id: sensor.sa_todays_battery_storage_in_generated
+        unique_id: sa_todays_battery_storage_in_generated
+        unit_of_measurement: "Wh"
+        icon: mdi:home-battery-outline
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          percentage_of_total: >
+            {%- set generated = states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0) -%}
+            {%- set total  = states('sensor.sa_data_by_5min_battery_storage_in_total')|float(0.0) -%}
+            {%- if total > 0 -%}
+              {{- (generated / total * 100)|float(0.0)|round(0) -}}
+            {%- else -%}
+              none
+            {%- endif -%}
+
+      - name: "Battery Storage Energy In Imported"
+        default_entity_id: sensor.sa_todays_battery_storage_in_imported
+        unique_id: sa_todays_battery_storage_in_imported
+        unit_of_measurement: "Wh"
+        icon: mdi:home-battery-outline
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_in_imported_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          percentage_of_total: >
+            {%- set imported = states('sensor.sa_data_by_5min_battery_storage_in_imported_total')|float(0.0) -%}
+            {%- set total = states('sensor.sa_data_by_5min_battery_storage_in_total')|float(0.0) -%}
+            {%- if total > 0 -%}
+              {{- (imported / total * 100)|float(0.0)|round(0) -}}
+            {%- else -%}
+              none
+            {%- endif -%}
 
       #
-      # Battery Storage Energy In Generated and Imported
+      # Battery Storage Energy Out Consumed and Exported
       #
-      # Note: sa_todays_battery_storage_in_generated and sa_todays_battery_storage_in_imported only sum the Wh
-      # stored while actually charging. Charger standby energy consumption is not included, but will be
-      # apparent where the sum of the two sensors is slightly less than sa_todays_battery_storage_in_total.
+      # Note: sa_todays_battery_storage_out_consumed and sa_todays_battery_storage_out_exported only sum the Wh
+      # while discharging.
       #
-    - name: "Battery Storage Energy In Generated"
-      default_entity_id: sensor.sa_todays_battery_storage_in_generated
-      unique_id: sa_todays_battery_storage_in_generated
-      unit_of_measurement: "Wh"
-      state: "{{- states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state -}}"
-      icon: mdi:home-battery-outline
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        percentage_of_total: >
-            {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state|is_number ) 
-                and ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number ) 
-              -%}
-              {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|float(0.0) > 0.0 ) -%}
-                {{- (( states.sensor.sa_data_by_5min_battery_storage_in_generated_total.state|float(0.0) ) 
-                    / (states.sensor.sa_data_by_5min_battery_storage_in_total.state|float(1.0)) 
-                    * 100.0 )|int | default('none') 
-                  -}}
-              {%- else -%}
-                none
-              {%- endif -%}
+      - name: "Battery Storage Energy Out Consumed"
+        default_entity_id: sensor.sa_todays_battery_storage_out_consumed
+        unique_id: sa_todays_battery_storage_out_consumed
+        unit_of_measurement: "Wh"
+        icon: mdi:home-battery
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          percentage_of_total: >-
+            {%- set consumed = states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0) -%}
+            {%- set total  = states('sensor.sa_data_by_5min_battery_storage_out_total')|float(0.0) -%}
+            {%- if total > 0 -%}
+              {{- (consumed / total * 100)|float(0.0)|round(0) -}}
             {%- else -%}
               none
             {%- endif -%}
 
-    - name: "Battery Storage Energy In Imported"
-      default_entity_id: sensor.sa_todays_battery_storage_in_imported
-      unique_id: sa_todays_battery_storage_in_imported
-      unit_of_measurement: "Wh"
-      state: "{{- states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state -}}"
-      icon: mdi:home-battery-outline
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        percentage_of_total: >
-            {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state|is_number ) 
-                and ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|is_number ) 
-              -%}
-              {%- if ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|float(0.0) > 0.0 ) -%}
-                {{- (( states.sensor.sa_data_by_5min_battery_storage_in_imported_total.state|float(0.0) ) 
-                    / ( states.sensor.sa_data_by_5min_battery_storage_in_total.state|float(1.0) ) 
-                    * 100.0)|int | default('none') 
-                  -}}
-              {%- else -%}
-                none
-              {%- endif -%}
+      - name: "Battery Storage Energy Out Exported"
+        default_entity_id: sensor.sa_todays_battery_storage_out_exported
+        unique_id: sa_todays_battery_storage_out_exported
+        unit_of_measurement: "Wh"
+        icon: mdi:home-battery
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_battery_storage_out_exported_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {%- if new_val < old and new_val < 1 -%}
+              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state|float(0.0) -}}
+            {%- endif -%}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          percentage_of_total: >
+            {%- set exported = states('sensor.sa_todays_battery_storage_out_exported')|float(0.0) -%}
+            {%- set total  = states('sensor.sa_data_by_5min_battery_storage_out_total')|float(0.0) -%}
+            {%- if total > 0 -%}
+              {{- (exported / total * 100)|float(0.0)|round(0) -}}
             {%- else -%}
               none
             {%- endif -%}
 
-    # The percentage of Battery Storage energy that from generated sources
-    # - i.e. not imported.
-    - name: "Battery Storage Energy In Generated Percentage"
-      default_entity_id: sensor.sa_todays_battery_storage_in_generated_percentage
-      unique_id: sa_todays_battery_storage_in_generated_percentage
-      unit_of_measurement: "%"
-      state: >
-          {{- state_attr( "sensor.sa_todays_battery_storage_in_generated", "percentage_of_total" ) 
-              if states.sensor.sa_todays_battery_storage_in_generated.attributes.percentage_of_total|is_number 
-              else "none" 
-            -}}
-      icon: mdi:home-battery-outline
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-
-    #
-    # Battery Storage Energy Out Consumed and Exported
-    #
-    # Note: sa_todays_battery_storage_out_consumed and sa_todays_battery_storage_out_exported only sum the Wh
-    # while discharging.
-    #
-    - name: "Battery Storage Energy Out Consumed"
-      default_entity_id: sensor.sa_todays_battery_storage_out_consumed
-      unique_id: sa_todays_battery_storage_out_consumed
-      unit_of_measurement: "Wh"
-      state: "{{- states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state -}}"
-      icon: mdi:home-battery
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        percentage_of_total: >
-            {%- if ( states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state|is_number ) 
-                and ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number ) 
-              -%}
-              {%- if ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|float(0.0) > 0.0 ) -%}
-                {{- (( states.sensor.sa_data_by_5min_battery_storage_out_consumed_total.state|float(0.0) ) 
-                    / (states.sensor.sa_data_by_5min_battery_storage_out_total.state|float(1.0)) 
-                    * 100.0 )|int | default('none') 
-                  -}}
-              {%- else -%}
-                none
-              {%- endif -%}
-            {%- else -%}
-              none
-            {%- endif -%}
-
-    - name: "Battery Storage Energy Out Exported"
-      default_entity_id: sensor.sa_todays_battery_storage_out_exported
-      unique_id: sa_todays_battery_storage_out_exported
-      unit_of_measurement: "Wh"
-      state: "{{- states.sensor.sa_data_by_5min_battery_storage_out_exported_total.state -}}"
-      icon: mdi:home-battery
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-        percentage_of_total: >
-            {%- if ( states.sensor.sa_todays_battery_storage_out_exported.state|is_number ) 
-                and ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|is_number ) 
-              -%}
-              {%- if ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|float(0.0) > 0.0 ) -%}
-                {{- (( states.sensor.sa_todays_battery_storage_out_exported.state|float(0.0) ) 
-                    / ( states.sensor.sa_data_by_5min_battery_storage_out_total.state|float(1.0) ) 
-                    * 100.0)|int | default('none') 
-                  -}}
-              {%- else -%}
-                none
-              {%- endif -%}
-            {%- else -%}
-              none
-            {%- endif -%}
+      # The percentage of Battery Storage energy that comes from generated sources
+      # - i.e. not imported.
+      #
+      # Return values: numeric if available, else none.
+      #
+      - name: "Battery Storage Energy In Generated Percentage"
+        default_entity_id: sensor.sa_todays_battery_storage_in_generated_percentage
+        unique_id: sa_todays_battery_storage_in_generated_percentage
+        unit_of_measurement: "%"
+        icon: mdi:home-battery-outline
+        state: >-
+            {{- state_attr( "sensor.sa_todays_battery_storage_in_generated", "percentage_of_total" )|float(none) -}} 
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
 
       # The percentage of Battery Storage energy that was consumed
       # - i.e. not exported.
-    - name: "Battery Storage Energy Out Consumed Percentage"
-      default_entity_id: sensor.sa_todays_battery_storage_out_consumed_percentage
-      unique_id: sa_todays_battery_storage_out_consumed_percentage
-      unit_of_measurement: "%"
-      state: >
-          {{- state_attr( "sensor.sa_todays_battery_storage_out_consumed", "percentage_of_total" ) 
-              if states.sensor.sa_todays_battery_storage_out_consumed.attributes.percentage_of_total|is_number 
-              else "none" 
-            -}}
-      icon: mdi:home-battery
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-### BATTERY STORAGE - END <<<<<<<<<<
+      - name: "Battery Storage Energy Out Consumed Percentage"
+        default_entity_id: sensor.sa_todays_battery_storage_out_consumed_percentage
+        unique_id: sa_todays_battery_storage_out_consumed_percentage
+        unit_of_measurement: "%"
+        icon: mdi:home-battery
+        state: >-
+          {{- state_attr( "sensor.sa_todays_battery_storage_out_consumed", "percentage_of_total" )|float(none) -}} 
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
 
+      #
+      # Solar Energy Consumed as kWh, % of generated, and % of of consumed.
+      #
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Total Energy Consumed Solar"
+        default_entity_id: sensor.sa_todays_energy_consumed_solar
+        unique_id: sa_todays_energy_consumed_solar
+        unit_of_measurement: "Wh"
+        icon: mdi:solar-power
+        device_class: "energy"
+        state_class: "total_increasing"
+        state: >-
+          {%- set new = states('sensor.sa_data_by_5min_consumed_solar_total')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if new_val != old else this.state -}}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
 
-    #
-    # Solar Energy Consumed as kWh, % of generated, and % of of consumed.
-    #
-    # Return values: numeric if available, else previous value else "unavailable"
-    - name: "Total Energy Consumed Solar"
-      default_entity_id: sensor.sa_todays_energy_consumed_solar
-      unique_id: sa_todays_energy_consumed_solar
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_5min_consumed_solar_total.state 
-              if states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number 
-              else this.state|default("unavailable") -}}
-      icon: mdi:solar-power
-      device_class: "energy"
-      state_class: "total_increasing"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-
-    - name: "Total Energy Generated Expected"
-      default_entity_id: sensor.sa_todays_energy_generated_expected_total
-      unique_id: sa_todays_energy_generated_expected_total
-      unit_of_measurement: "Wh"
-      state: >-
-          {{- states.sensor.sa_data_by_hour_generated_expected.state 
-              if states.sensor.sa_data_by_hour_generated_expected.state|is_number 
-              else this.state|default("unavailable") -}}
-      icon: mdi:solar-power
-      device_class: "energy"
-      state_class: "total"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_hour_time_stamp.state -}}"
-
-    #
-    # Calculation logic considerate of total energy generated at start of the day
-    # could be negative (i.e. the inverter has consumed energy at start-up).
-    #
-    # Percentage of generated energy that has been consumed.
-    # Only shows valid sensor when the daily generated solar energy is greater than 100Wh.
-    #
-    # Return values: numeric if available, else "unavailable"
-    - name: "Percentage Generated Energy Consumed"
-      default_entity_id: sensor.sa_todays_generated_consumed_percentage
-      unique_id: sa_todays_generated_consumed_percentage
-      unit_of_measurement: "%"
-      state: >
-          {%- if (states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number) 
-                and (states.sensor.sa_data_by_5min_energy_generated_total.state|is_number) 
-            -%}
-            {%- if ( states.sensor.sa_data_by_5min_consumed_solar_total.state|float
-                    < states.sensor.sa_data_by_5min_energy_generated_total.state|float )
-                  and ( states.sensor.sa_data_by_5min_consumed_solar_total.state|float > 100.0 )                
-              -%}
-              {{- ( (states.sensor.sa_data_by_5min_consumed_solar_total.state|float) 
-                    / (states.sensor.sa_data_by_5min_energy_generated_total.state|float) 
-                    * 100.0 ) 
-                  | round(1) 
-                -}}
+      #
+      # Calculation logic considerate of total energy generated at start of the day
+      # could be negative (i.e. the inverter has consumed energy at start-up).
+      #
+      # Percentage of generated energy that has been consumed.
+      # Only shows valid sensor when the daily generated solar energy is greater than 100Wh.
+      #
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Percentage Generated Energy Consumed"
+        default_entity_id: sensor.sa_todays_generated_consumed_percentage
+        unique_id: sa_todays_generated_consumed_percentage
+        unit_of_measurement: "%"
+        icon: mdi:solar-power
+        state: >-
+          {%- set consumed_solar = states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0) -%}
+          {%- set generated_total = states('sensor.sa_data_by_5min_energy_generated_total')|float(0.0) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if generated_total > 0 -%}
+            {%- if (consumed_solar < generated_total) and (consumed_solar > 100.0) -%}
+              {%- set new_val = (consumed_solar / generated_total * 100.0)|round(1) -%}
+              {{- new_val if new_val != old else this.state -}}
             {%- else -%}
-              100.0
+              {{- 100.0 if 100.0 != old else this.state -}}
             {%- endif -%}
           {%- else -%}
-            {{- states.sensor.sa_todays_generated_consumed_percentage.state 
-                if states.sensor.sa_todays_generated_consumed_percentage.state|is_number 
-                else "unavailable" 
-              -}}
+            {{- this.state|float(0.0) -}}
           {%- endif -%}
-      icon: mdi:solar-power
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
 
-    # Percentage of consumed energy that has been generated.
-    #
-    # Return values: numeric if available, else "unavailable"
-    - name: "Percentage Consumed Energy Generated"
-      default_entity_id: sensor.sa_todays_consumed_generated_percentage
-      unique_id: sa_todays_consumed_generated_percentage
-      unit_of_measurement: "%"
-      state: >-
-          {%- if (states.sensor.sa_data_by_5min_energy_consumed_total.state|is_number) 
-                and (states.sensor.sa_data_by_5min_consumed_solar_total.state|is_number) 
-            -%}
-            {%- if ( states.sensor.sa_data_by_5min_consumed_solar_total.state|float
-                    < states.sensor.sa_data_by_5min_energy_consumed_total.state|float )
-                  and ( states('sensor.sa_data_by_5min_consumed_solar_total')|float > 100.0 )
-              -%}
-              {{- ( (states.sensor.sa_data_by_5min_consumed_solar_total.state|float) 
-                    / (states.sensor.sa_data_by_5min_energy_consumed_total.state|float) 
-                    * 100.0 ) 
-                  | round(1) 
-                -}}
+      # Percentage of consumed energy that has been generated.
+      #
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Percentage Consumed Energy Generated"
+        default_entity_id: sensor.sa_todays_consumed_generated_percentage
+        unique_id: sa_todays_consumed_generated_percentage
+        unit_of_measurement: "%"
+        icon: mdi:solar-power
+        state: >-
+          {%- set consumed_solar = states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0) -%}
+          {%- set consumed_total = states('sensor.sa_data_by_5min_energy_consumed_total')|float(0.0) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if consumed_total > 0 -%}
+            {%- if (consumed_solar < consumed_total) and (consumed_solar > 100.0) -%}
+              {%- set new_val = (consumed_solar / consumed_total * 100.0)|round(1) -%}
+              {{- new_val if new_val != old else this.state -}}
             {%- else -%}
-              0.0
+              {{- this.state -}}
             {%- endif -%}
           {%- else -%}
-            {{- states.sensor.sa_todays_consumed_generated_percentage.state 
-                if states.sensor.sa_todays_consumed_generated_percentage.state|is_number 
-                else "unavailable" 
-              -}}
+            0.0
           {%- endif -%}
-      icon: mdi:solar-power
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
 
-    #
-    # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
-    # The units are in kW.
-    #
-    # Note: results are 5 minute average power, with area under the graph being the energy
-    # usage within that time interval. The time duration is limited to 28x 5 minute intervals
-    # (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
-    # Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
-    # the number of intervals if that's desireable, but at a lower resolution. Lastly,
-    # the history sensors as states from above are implemented as attributes so they
-    # can be readily interpreted as lists.
-    #
-    - name: "Total Energy History"
-      default_entity_id: sensor.sa_todays_energy_history
-      unique_id: sa_todays_energy_history        
-      state: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
-      icon: mdi:sun-clock
-      attributes:
-        times: >-
-            {%- set ns = namespace( 
-                times=[],
-                count = states('sensor.sa_data_by_5min_history_time_stamp_count')|int(0) 
-                ) 
-              -%}
+      #
+      # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
+      # The units are in kW.
+      #
+      # Note: results are 5 minute average power, with area under the graph being the energy
+      # usage within that time interval. The time duration is limited to 28x 5 minute intervals
+      # (= 2h20m) as this fits within the 255 character max allowed by the state of a sensor.
+      # Rounding to a reduced number of decimal places (e.g. 1 instead of 2) could increase
+      # the number of intervals if that's desireable, but at a lower resolution. Lastly,
+      # the history sensors as states from above are implemented as attributes so they
+      # can be readily interpreted as lists.
+      #
+      - name: "Total Energy History"
+        default_entity_id: sensor.sa_todays_energy_history
+        unique_id: sa_todays_energy_history
+        state: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        icon: mdi:sun-clock
+        attributes:
+          times: >-
+            {%- set ns = namespace( times=[],
+                count = states('sensor.sa_data_by_5min_history_time_stamp_count')|int(0) ) -%}
             {%- for i in range(ns.count) -%}
               {%- if i > ns.count - 29 -%}
                 {%- set ns.times = ns.times + [
                     as_local( 
                       as_datetime( states('sensor.sa_data_by_5min_time_stamp') )  
                       - timedelta(minutes=(ns.count*5)-((i+1)*5)) 
-                      ).strftime("%Y-%m-%d %H:%M:%S")
-                    ] 
-                  -%}
+                      ).strftime("%Y-%m-%d %H:%M:%S") ] -%}
                 {%- endif -%}
             {%- endfor -%}
             {{- ns.times -}}
-        times_simple: >
-            {{- states.sensor.sa_data_by_5min_history_time_stamp.state -}}
-        energy_consumed: >
-            {{- states.sensor.sa_data_by_5min_history_energy_consumed.state -}}
-        energy_generated: >
-            {{- states.sensor.sa_data_by_5min_history_energy_generated.state -}}
+          times_simple: >
+            {{- states('sensor.sa_data_by_5min_history_time_stamp') -}}
+          energy_consumed: >
+            {{- states('sensor.sa_data_by_5min_history_energy_consumed') -}}
+          energy_generated: >
+            {{- states('sensor.sa_data_by_5min_history_energy_generated') -}}
+          energy_imported_exported: >
+            {{- states('sensor.sa_data_by_5min_history_imported_exported') -}}
 
-### BATTERY STORAGE - START >>>>>>>>>>
-        energy_battery_storage: >
-            {{- states.sensor.sa_data_by_5min_history_battery_storage.state -}}
-        energy_consumed_home: >
-            {{- states.sensor.sa_data_by_5min_history_energy_consumed_home.state -}}
-        energy_imported_exported: >
-            {{- states.sensor.sa_data_by_5min_history_imported_exported.state -}}
-### BATTERY STORAGE - END <<<<<<<<<<
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+          energy_battery_storage: >
+              {{- states('sensor.sa_data_by_5min_history_battery_storage') -}}
+          energy_consumed_home: >
+              {{- states('sensor.sa_data_by_5min_history_energy_consumed_home') -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_hour_time_stamp
+        not_to:
+          - "unknown"
+          - "unavailable"
+          - "none"
+        for: "00:00:02"
+
+    sensor:
+      # Expected solar generation to current hour - updated hourly
+      #
+      # Importantly, the sensor is stabilised by clamping near-zero noise variations
+      # that may occur during nighttime hours. Both the previous (old) value and the 
+      # new upstream value are normalised to zero in this region to eliminate micro-
+      # step changes that cause template loop warnings.
+      #
+      # The sensor preserves valid state and only reacts to meaningful monotonic 
+      # changes — eliminating template loops and improving real-world accuracy.
+      #
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Total Energy Generated Expected"
+        default_entity_id: sensor.sa_todays_energy_generated_expected_total
+        unique_id: sa_todays_energy_generated_expected_total
+        unit_of_measurement: "Wh"
+        icon: mdi:solar-power
+        device_class: "energy"
+        state_class: "total"
+        state: >-
+          {#- Pull upstream hourly expected generation value and safely convert to float.
+              Using float(none) allows detection of invalid input (unknown/unavailable).
+            -#}
+          {%- set new = states('sensor.sa_data_by_hour_generated_expected')|float(none) -%}
+          {#- Read this sensors previous state using float() because HA states are strings.
+              Using float(0.0) ensures we always have a numeric baseline.
+            -#}
+          {%- set old = this.state|float(0.0) -%}
+          {#- CRITICAL: Clamp OLD value as well as NEW value.
+              WHY:
+              - Near-zero values (e.g. 1e-5 → 1e-8 → 1e-11) can continue stepping down
+              - If only new_val is clamped, old remains slightly above zero
+              - This causes HA to see a "real change" → triggers loop
+              RESULT:
+              - Both sides normalised → no artificial change → loop eliminated
+            -#}
+          {%- if old < 0.0001 -%}
+            {%- set old = 0.0 -%}
+          {%- endif -%}
+          {#- Only proceed if upstream value is valid (i.e. not None)
+              preventing bad API data from corrupting the sensor.
+            -#}
+          {%- if new is not none -%}
+            {#- Convert new value to float for consistent numeric processing. -#}
+            {%- set new_val = new|float(0.0) -%}
+            {#- CLAMP VERY SMALL VALUES TO ZERO
+                - Near-zero values can oscillate endlessly due to rounding noise
+                - Causes repeated micro-updates → HA template loop detection
+                - These values are physically meaningless (no real solar generation)
+              RESULT:
+                - Stabilises the sensor at zero near midnight / resets
+              -#}
+            {%- if new_val < 0.0001 -%}
+              {%- set new_val = 0.0 -%}
+            {%- endif -%}
+            {#- RESET HANDLING BRANCH (e.g. midnight rollover)
+                Condition:
+                  - new value is less than previous value AND still near zero
+                WHY:
+                  - Daily totals reset to ~0 at midnight
+                  - Allow real reset while suppressing micro fluctuations
+              -#}
+            {%- if new_val < old and new_val < 1 -%}
+              {#- Only accept reset if the change is meaningful
+                  - Prevents tiny numerical drift triggering updates
+                  - Reduces HA churn and avoids loop detection
+                -#}
+              {{- new_val if (new_val - old)|abs > 0.0001 else old -}}
+            {#- NORMAL OPERATION BRANCH (monotonic increase)
+                Expected behaviour for cumulative totals
+              -#}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {#- NO CHANGE / INVALID DECREASE
+                - Ignore jitter, noise or inconsistent API values
+                - Preserve last valid stable state
+              -#}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          {#- INVALID INPUT HANDLING
+              - Upstream sensor unavailable or invalid
+              - Preserve previous valid value instead of resetting
+            -#}
+          {%- else -%}
+            {{- old -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_hour_time_stamp') -}}"
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_live_site_data_time_stamp
+        not_to:
+          - "unknown"
+          - "unavailable"
+          - "none"
+        for: "00:00:02"
+
+    sensor:
+      #
+      # Solar Analytics power sensors
+      #
+      # Return values: numeric if available, else previous value else 0.0.
+      #
+      - name: "Power Consumption"
+        default_entity_id: sensor.sa_consumption_power
+        unique_id: sa_consumption_power
+        unit_of_measurement: "W"
+        icon: mdi:home-lightning-bolt-outline
+        device_class: "power"
+        state_class: "measurement"
+        state: >-
+          {%- set new = states('sensor.sa_live_site_data_consumed')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+
+      - name: "Power Generation"
+        default_entity_id: sensor.sa_generation_power
+        unique_id: sa_generation_power
+        unit_of_measurement: "W"
+        icon: mdi:solar-power
+        device_class: "power"
+        state_class: "measurement"
+        state: >-
+          {%- set new = states('sensor.sa_live_site_data_generated')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+
+      - name: "Power Import Export"
+        default_entity_id: sensor.sa_import_export_power
+        unique_id: sa_import_export_power
+        unit_of_measurement: "W"
+        icon: mdi:transmission-tower
+        device_class: "power"
+        state_class: "measurement"
+        state: >-
+          {%- set new = states('sensor.sa_live_site_data_imported_exported')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+  
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+      - name: "Power Battery"
+        default_entity_id: sensor.sa_battery_power
+        unique_id: sa_battery_power
+        unit_of_measurement: "W"
+        icon: mdi:battery-charging
+        device_class: "power"
+        state_class: "measurement"
+        state: >-
+          {%- set new = states('sensor.sa_live_site_data_battery')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+
+      - name: "Power Home Consumption"
+        default_entity_id: sensor.sa_home_consumption_power
+        unique_id: sa_home_consumption_power
+        unit_of_measurement: "W"
+        icon: mdi:home-lightning-bolt-outline
+        device_class: "power"
+        state_class: "measurement"
+        state: >-
+          {%- set new = states('sensor.sa_live_site_data_consumed_home')|float(none) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if new|is_number -%}
+            {%- set new_val = new|float(0.0) -%}
+            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #
+
+  - sensor:
+      # Solar Analytics status sensors
+      - name: "Dashboard Status"
+        default_entity_id: sensor.sa_dashboard_status
+        unique_id: sa_dashboard_status
+        state: "{{- state_attr('sensor.sa_status', 'dashboard_status') -}}"
+
+      - name: "System Status"
+        default_entity_id: sensor.sa_mer_status
+        unique_id: sa_mer_status
+        state: "{{- state_attr('sensor.sa_status', 'mer_status') -}}"
+
+      - name: "PV Performance"
+        default_entity_id: sensor.sa_mer_percentage
+        unique_id: sa_mer_percentage
+        state: "{{- state_attr('sensor.sa_status', 'mer_percentage') -}}"
+        unit_of_measurement: "%"
+
+      #
+      ### DELETE FOR RELEASE CODE - START <<<<<<<<<<
+      #
+      - name: "HOUSEHOLD CONSUMED CHECK"
+        default_entity_id: sensor.sa_household_consumed_check
+        unique_id: sa_household_consumed_check
+        state: >-
+          {%- set consumed = states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(none) -%}
+          {%- set solar = states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0) -%}
+          {%- set battery = states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0) -%}
+          {%- set imported = states('sensor.sa_data_by_5min_energy_consumed_home_imported_total')|float(0.0) -%}
+          {%- if consumed is number -%}
+            {%- set diff = (consumed - (solar + battery + imported))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          consumed_solar_total: "{{- states('sensor.sa_data_by_5min_consumed_solar_total') -}}"
+          battery_storage_out_consumed_total: "{{- states('sensor.sa_data_by_5min_battery_storage_out_consumed_total') -}}"
+          consumed_home_imported_total: "{{- states('sensor.sa_data_by_5min_energy_consumed_home_imported_total') -}}"
+          consumed_home_total: "{{- states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(0.0)|round(2) -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0)
+                  + states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0)
+                  + states('sensor.sa_data_by_5min_energy_consumed_home_imported_total')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(0.0)
+                  - ( states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0)
+                      + states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0)
+                      + states('sensor.sa_data_by_5min_energy_consumed_home_imported_total')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_data_by_5min_energy_consumed_home_total')|float(none) is number -}}
+
+      - name: "SOLAR GENERATED CHECK"
+        default_entity_id: sensor.sa_solar_generated_check
+        unique_id: sa_solar_generated_check
+        state: >-
+          {%- set generated = states('sensor.sa_data_by_5min_energy_generated_total')|float(none) -%}
+          {%- set solar = states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0) -%}
+          {%- set battery = states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0) -%}
+          {%- set exported = states('sensor.sa_data_by_5min_exported_generated_total')|float(0.0) -%}
+          {%- if generated is number -%}
+            {%- set diff = (generated - (solar + battery + exported))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          consumed_solar_total: "{{- states('sensor.sa_data_by_5min_consumed_solar_total') -}}"
+          battery_storage_in_generated_total: "{{- states('sensor.sa_data_by_5min_battery_storage_in_generated_total') -}}"
+          exported_generated_total: "{{- states('sensor.sa_data_by_5min_exported_generated_total') -}}"
+          energy_generated_total: "{{- states('sensor.sa_data_by_5min_energy_generated_total')|float(0.0)|round(2) -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0)
+                  + states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0)
+                  + states('sensor.sa_data_by_5min_exported_generated_total')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_data_by_5min_energy_generated_total')|float(0.0)
+                  - ( states('sensor.sa_data_by_5min_consumed_solar_total')|float(0.0)
+                      + states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0)
+                      + states('sensor.sa_data_by_5min_exported_generated_total')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_data_by_5min_energy_generated_total')|float(none) is number -}}
+
+      - name: "EXPORTED CHECK"
+        default_entity_id: sensor.sa_exported_check
+        unique_id: sa_exported_check
+        state: >-
+          {%- set exported = states('sensor.sa_todays_energy_exported')|float(none) -%}
+          {%- set battery = states('sensor.sa_todays_battery_storage_out_exported')|float(0.0) -%}
+          {%- set generated = states('sensor.sa_todays_energy_exported_generated')|float(0.0) -%}
+          {%- if exported is number -%}
+            {%- set diff = (exported - (battery + generated))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          sa_todays_battery_storage_out_exported: "{{- states('sensor.sa_todays_battery_storage_out_exported') -}}"
+          sa_todays_energy_exported_generated: "{{- states('sensor.sa_todays_energy_exported_generated') -}}"
+          sa_todays_energy_exported: "{{- states('sensor.sa_todays_energy_exported') -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_todays_battery_storage_out_exported')|float(0.0)
+                  + states('sensor.sa_todays_energy_exported_generated')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_todays_energy_exported')|float(0.0)
+                  - ( states('sensor.sa_todays_battery_storage_out_exported')|float(0.0)
+                      + states('sensor.sa_todays_energy_exported_generated')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_todays_energy_exported')|float(none) is number -}}
+
+      - name: "IMPORTED CHECK"
+        default_entity_id: sensor.sa_imported_check
+        unique_id: sa_imported_check
+        state: >-
+          {%- set imported = states('sensor.sa_todays_energy_imported')|float(none) -%}
+          {%- set consumed = states('sensor.sa_todays_energy_consumed_home_imported_total')|float(0.0) -%}
+          {%- set battery = states('sensor.sa_todays_battery_storage_in_imported')|float(0.0) -%}
+          {%- if imported is number -%}
+            {%- set diff = (imported - (consumed + battery))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          sa_todays_battery_storage_in_imported: "{{- states('sensor.sa_todays_battery_storage_in_imported') -}}"
+          sa_todays_energy_consumed_home_imported_total: "{{- states('sensor.sa_todays_energy_consumed_home_imported_total') -}}"
+          sa_todays_energy_imported: "{{- states('sensor.sa_todays_energy_imported') -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_todays_battery_storage_in_imported')|float(0.0)
+                  + states('sensor.sa_todays_energy_consumed_home_imported_total')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_todays_energy_imported')|float(0.0)
+                  - ( states('sensor.sa_todays_energy_consumed_home_imported_total')|float(0.0)
+                      + states('sensor.sa_todays_battery_storage_in_imported')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_todays_energy_imported')|float(none) is number -}}
+
+  #
+  ### BATTERY STORAGE - START >>>>>>>>>>
+  #
+      - name: "BATTERY INPUT CHECK"
+        default_entity_id: sensor.sa_battery_input_check
+        unique_id: sa_battery_input_check
+        state: >-
+          {%- set storeage_in = states('sensor.sa_todays_battery_storage_in_total')|float(none) -%}
+          {%- set generated = states('sensor.sa_todays_battery_storage_in_generated')|float(0.0) -%}
+          {%- set imported = states('sensor.sa_todays_battery_storage_in_imported')|float(0.0) -%}
+          {%- if storeage_in is number -%}
+            {%- set diff = (storeage_in - (generated + imported))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          sa_todays_battery_storage_in_generated: "{{- states('sensor.sa_todays_battery_storage_in_generated') -}}"
+          sa_todays_battery_storage_in_imported: "{{- states('sensor.sa_todays_battery_storage_in_imported') -}}"
+          sa_todays_battery_storage_in_total: "{{- states('sensor.sa_todays_battery_storage_in_total') -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_todays_battery_storage_in_generated')|float(0.0)
+                  + states('sensor.sa_todays_battery_storage_in_imported')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_todays_battery_storage_in_total')|float(0.0)
+                  - ( states('sensor.sa_todays_battery_storage_in_generated')|float(0.0)
+                      + states('sensor.sa_todays_battery_storage_in_imported')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_todays_battery_storage_in_total')|float(none) is number -}}
+
+      - name: "BATTERY OUTPUT CHECK"
+        default_entity_id: sensor.sa_battery_output_check
+        unique_id: sa_battery_output_check
+        state: >-
+          {%- set storeage_out = states('sensor.sa_todays_battery_storage_out_total')|float(none) -%}
+          {%- set consumed = states('sensor.sa_todays_battery_storage_out_consumed')|float(0.0) -%}
+          {%- set exported = states('sensor.sa_todays_battery_storage_out_exported')|float(0.0) -%}
+          {%- if storeage_out is number -%}
+            {%- set diff = (storeage_out - (consumed + exported))|abs -%}
+            {{- "TRUE" if diff < 0.01 else "FALSE" -}}
+          {%- else -%}
+            none
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          sa_todays_battery_storage_out_consumed: "{{- states('sensor.sa_todays_battery_storage_out_consumed') -}}"
+          sa_todays_battery_storage_out_exported: "{{- states('sensor.sa_todays_battery_storage_out_exported') -}}"
+          sa_todays_battery_storage_out_total: "{{- states('sensor.sa_todays_battery_storage_out_total') -}}"
+          summed_total: >-
+            {{- ( states('sensor.sa_todays_battery_storage_out_consumed')|float(0.0)
+                  + states('sensor.sa_todays_battery_storage_out_exported')|float(0.0)
+                )|round(2) -}}
+          difference: >-
+            {{- ( states('sensor.sa_todays_battery_storage_out_total')|float(0.0)
+                  - ( states('sensor.sa_todays_battery_storage_out_consumed')|float(0.0)
+                      + states('sensor.sa_todays_battery_storage_out_exported')|float(0.0) )
+                )|round(4) -}}
+        availability: >-
+          {{- states('sensor.sa_todays_battery_storage_out_total')|float(none) is number -}}
+  #
+  ### BATTERY STORAGE - END <<<<<<<<<<
+  #   
+      #
+      ### DELETE FOR RELEASE CODE - END <<<<<<<<<<
+      #
 
     #
-    # Solar Analytics power sensors
+    # Home Assistant Energy Dashboard extras
     #
-    # Return values: numeric if available, else previous value else "0.0"
-    - name: "Power Consumption"
-      default_entity_id: sensor.sa_consumption_power
-      unique_id: sa_consumption_power
-      unit_of_measurement: "W"
-      state: >-
-          {{- states.sensor.sa_live_site_data_consumed.state
-              if states.sensor.sa_live_site_data_consumed.state|is_number
-              else states.sensor.sa_consumption_power.state|default(0.0)
-            -}}
-      icon: mdi:home-lightning-bolt-outline
-      device_class: "power"
-      state_class: "measurement"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-
-    - name: "Power Generation"
-      default_entity_id: sensor.sa_generation_power
-      unique_id: sa_generation_power
-      unit_of_measurement: "W"
-      state: >-
-          {{- states.sensor.sa_live_site_data_generated.state
-              if states.sensor.sa_live_site_data_generated.state|is_number
-              else states.sensor.sa_generation_power.state|default(0.0)
-            -}}
-      icon: mdi:solar-power
-      device_class: "power"
-      state_class: "measurement"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-
-    - name: "Power Import Export"
-      default_entity_id: sensor.sa_import_export_power
-      unique_id: sa_import_export_power
-      unit_of_measurement: "W"
-      state: >-
-          {{- states.sensor.sa_live_site_data_imported_exported.state
-              if states.sensor.sa_live_site_data_imported_exported.state|is_number
-              else states.sensor.sa_import_export_power.state|default(0.0)
-            -}}
-      icon: mdi:transmission-tower
-      device_class: "power"
-      state_class: "measurement"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-
-### BATTERY STORAGE - START >>>>>>>>>>
-    - name: "Power Battery"
-      default_entity_id: sensor.sa_battery_power
-      unique_id: sa_battery_power
-      unit_of_measurement: "W"
-      state: >-
-          {{- states.sensor.sa_live_site_data_battery.state
-              if states.sensor.sa_live_site_data_battery.state|is_number
-              else states.sensor.sa_battery_power.state|default(0.0)
-            -}}
-      icon: mdi:battery
-      device_class: "power"
-      state_class: "measurement"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-
-    - name: "Power Home Consumption"
-      default_entity_id: sensor.sa_home_consumption_power
-      unique_id: sa_home_consumption_power
-      unit_of_measurement: "W"
-      state: >-
-          {{- states.sensor.sa_live_site_data_consumed_home.state
-              if states.sensor.sa_live_site_data_consumed_home.state|is_number
-              else states.sensor.sa_home_consumption_power.state|default(0.0)
-            -}}
-      icon: mdi:home-lightning-bolt-outline
-      device_class: "power"
-      state_class: "measurement"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_live_site_data_time_stamp.state -}}"
-### BATTERY STORAGE - END <<<<<<<<<<
-
-#
-# Home Assistant Energy Dashboard extras
-#
     #
     # Todays Energy Total Net Cost
     #
@@ -2011,22 +2576,26 @@ template:
     #   > sa_todays_energy_exported_compensation - revenue from exported energy
     # This new entity provides the net cost (imported cost minus exported revenue)
     #
-    - name: "Todays Energy Total Net Cost"
-      default_entity_id: sensor.sa_todays_energy_total_net_cost
-      unique_id: sa_todays_energy_total_net_cost
-      unit_of_measurement: "AUD"
-      device_class: "monetary"
-      icon: mdi:cash
-      state: >-
-          {{- (states.sensor.sa_todays_energy_imported_cost.state|float(0.0)) 
-              - (states.sensor.sa_todays_energy_exported_compensation.state|float(0.0)) 
-            -}}
-      state_class: "total"
-      attributes:
-        time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+      - name: "Todays Energy Total Net Cost"
+        default_entity_id: sensor.sa_todays_energy_total_net_cost
+        unique_id: sa_todays_energy_total_net_cost
+        unit_of_measurement: "AUD"
+        device_class: "monetary"
+        icon: mdi:cash
+        state_class: "total"
+        state: >-
+          {%- set import_raw = states('sensor.sa_todays_energy_imported_cost') -%}
+          {%- set export_raw = states('sensor.sa_todays_energy_exported_compensation') -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if import_raw|is_number and export_raw|is_number -%}
+            {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
+            {{- new_val if new_val != old else this.state|float(0.0) -}}
+          {%- else -%}
+            {{- this.state|float(0.0) -}}
+          {%- endif -%}
+        attributes:
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
 
-# -----------------------------------------------------------------------------
-# TEMPLATE TRIGGER SENSORS
   #
   # Todays Energy Import Rate
   #
@@ -2037,6 +2606,7 @@ template:
   # HA Energy Dashboard when appropriate pricing is set-up for energy drawn from the grid.
   #
   # Defaults to previous value when the imported total Wh is < 100.
+  #
   - trigger:
       - platform: state
         entity_id: sensor.sa_todays_energy_imported_cost
@@ -2047,23 +2617,23 @@ template:
         device_class: "monetary"
         icon: mdi:cash-plus
         state: >-
-          {%- if ( states.sensor.sa_data_by_5min_imported_total.state|is_number ) 
-              and ( states.sensor.sa_todays_energy_imported_cost.state|is_number ) -%}
-            {%- if states.sensor.sa_data_by_5min_imported_total.state|int(0) > 100 -%}
-              {{- ( states.sensor.sa_todays_energy_imported_cost.state|float(0.0) 
-                    / states.sensor.sa_data_by_5min_imported_total.state|float(1.0) 
-                    * 1000.0 ) 
-                  | round(3) 
-                -}}
+          {%- set imported = states('sensor.sa_data_by_5min_imported_total')|float(0.0) -%}
+          {%- set cost = states('sensor.sa_todays_energy_imported_cost')|float(0.0) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if imported > 0 -%}
+            {%- if imported > 100 -%}
+              {{- (cost / imported * 1000.0)|float(0.0)|round(3) -}}
             {%- else -%}
-              {{- this.state|default(0.0) -}}
+              {{- this.state|float(0.0) -}}
             {%- endif -%}
           {%- else -%}
-            unavailable
+            0.0
           {%- endif -%}
         attributes:
           state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        availability: >-
+          {{- states('sensor.sa_data_by_5min_imported_total')|float(0.0) > 0 -}}
 
   #
   # Todays Energy Export Rate
@@ -2075,6 +2645,7 @@ template:
   # HA Energy Dashboard when appropriate pricing is set-up for energy returned to the grid. 
   #
   # Defaults to previous value when the imported total Wh is < 100.
+  #
   - trigger:
       - platform: state
         entity_id: sensor.sa_todays_energy_exported_compensation
@@ -2085,23 +2656,23 @@ template:
         device_class: "monetary"
         icon: mdi:cash-plus
         state: >-
-          {%- if ( states.sensor.sa_data_by_5min_exported_total.state|is_number ) 
-              and ( states.sensor.sa_todays_energy_exported_compensation.state|is_number ) -%}
-            {%- if states.sensor.sa_data_by_5min_exported_total.state|int(0) > 100 -%}
-              {{- ( states.sensor.sa_todays_energy_exported_compensation.state|float(0.0) 
-                    / states.sensor.sa_data_by_5min_exported_total.state|float(1.0) 
-                    * 1000.0 ) 
-                  | round(3) 
-                -}}
+          {%- set exported = states('sensor.sa_data_by_5min_exported_total')|float(0.0) -%}
+          {%- set compensation = states('sensor.sa_todays_energy_exported_compensation')|float(0.0) -%}
+          {%- set old = this.state|float(0.0) -%}
+          {%- if exported > 0 -%}
+            {%- if exported > 100 -%}
+              {{- (compensation / exported * 1000.0)|float(0.0)|round(3) -}}
             {%- else -%}
-              {{- this.state|default(0.0) -}}
+              {{- this.state|float(0.0) -}}
             {%- endif -%}
           {%- else -%}
-            unavailable
+            0.0
           {%- endif -%}
         attributes:
           state_class: "measurement"
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        availability: >-
+          {{- states('sensor.sa_data_by_5min_exported_total')|float(0.0) > 0 -}}
 
 # =============================================================================
 

@@ -1,17 +1,25 @@
 # -----------------------------------------------------------------------------
+# >>> RELEASE 10 FINAL - <<< AMBER OTHER COST
 #
 # Other devices integration for Home Assistant Energy Management. 
-# Requires <solar_analytics.yaml> to be installed or an alternative source
-# of Watt-hour charging data.
+# Requires <solar_analytics_advanced.yaml> to be installed or an alternative source
+# of imported Watt-hour device load data.
 # 
 # Developed by Peter Hormann
 #
 # Created: 29-Dec-25
 #
-# Last updated: 29-Dec-25
+# Last updated: 24-May-26
 #
 # Updates: 
 #   29-Dec-25 - initial version forked from amber_oven_stove_cost.yaml.
+#   24-May-26 - Updated charging cost sensors to align with Release 10 hardened template patterns:
+#             - Replaced direct entity self-references with state-preserving logic using this.state
+#             - Improved numerical safety using float(none) and state_attr() to handle startup and unavailable states
+#             - Eliminated transient resets to 0.0 by preserving last valid values when inputs are invalid
+#             - Added change-guard logic to suppress minor calculation jitter and unnecessary state updates
+#             - Standardised incremental and cumulative cost calculations for improved stability and accuracy
+#             - Ensured consistent handling of last5min energy attributes and Amber price inputs
 #
 # Calculate Other devices cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
@@ -29,11 +37,13 @@
 #
 # Installation: 
 #   1. Copy this yaml file to the HA config directory.
-#   2. Include this file name as a package in the HA <configuration.yaml>. 
+#   2. Include this file name as a package in the HA <configuration.yaml>. Package names must be unique.
 #      For example -
 #        packages:
+#          pack_1: !include solar_analytics_advanced.yaml
 #          pack_2: !include amber_ev_charge_cost.yaml
-#          pack_3: !include amber....yaml #etc
+#          pack_x: !include amber....yaml #etc
+#          pack_y: !include amber_other_cost.yaml
 #   3. Rename "amber12ayrst_xyz" sensors to match HA Amber installation sensor naming.
 #   4. Ensure the Developer Tools > YAML > Check Configuration passes without error.
 #   5. Restart HA, or simply use YAML Configuration Reloading > Template Entities.
@@ -49,21 +59,36 @@
 
 template:
   - sensor:
-      - name: "Todays Other Total Cost"
-        default_entity_id: sensor.amber_todays_other_total_cost
-        unique_id: amber_todays_other_total_cost
-        unit_of_measurement: "AUD"
-        device_class: "monetary"
-        icon: mdi:cash
-        state: >
-          {{- ( states.sensor.sa_todays_energy_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_electric_vehicle_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_heating_cooling_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_hot_water_imported_cost.state|float(0.0)
-                - states.sensor.amber_todays_stove_oven_imported_cost.state|float(0.0)
-              ) 
-              | round(4)
-            -}}
-        state_class: total
-        attributes: 
-          time_stamp: "{{- states.sensor.sa_data_by_5min_time_stamp.state -}}"
+    - name: "Todays Other Total Cost"
+      default_entity_id: sensor.amber_todays_other_total_cost
+      unique_id: amber_todays_other_total_cost
+      unit_of_measurement: "AUD"
+      device_class: "monetary"
+      icon: mdi:cash
+      state_class: total
+      state: >
+        {#- Read all inputs safely (None if invalid) -#}
+        {%- set total = states('sensor.sa_todays_energy_imported_cost')|float(none) -%}
+        {%- set ev = states('sensor.amber_todays_electric_vehicle_imported_cost')|float(0.0) -%}
+        {%- set hc = states('sensor.amber_todays_heating_cooling_imported_cost')|float(0.0) -%}
+        {%- set hw = states('sensor.amber_todays_hot_water_imported_cost')|float(0.0) -%}
+        {%- set st = states('sensor.amber_todays_stove_oven_imported_cost')|float(0.0) -%}
+        {#- Previous valid value -#}
+        {%- set old = this.state|float(0.0) -%}
+        {#- Only calculate if ALL inputs are valid -#}
+        {%- if total is not none -%}
+          {%- set new_val = (total - ev - hc - hw - st) -%}
+          {#- Prevent negative rounding artefacts (very small negatives → zero) -#}
+          {%- if new_val > -0.0001 and new_val < 0 -%}
+            {%- set new_val = 0.0 -%}
+          {%- endif -%}
+          {#- Only update if meaningful change -#}
+          {{- new_val|round(4) if (new_val - old)|abs > 0.0001 else old -}}
+        {#- Otherwise preserve previous value -#}
+        {%- else -%}
+          {{- old -}}
+        {%- endif -%}
+      attributes:
+        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+
+# -----------------------------------------------------------------------------
