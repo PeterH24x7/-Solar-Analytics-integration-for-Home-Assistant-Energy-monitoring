@@ -5,7 +5,7 @@ Release 10 hardens all template sensors against loops, resets, startup condition
 invalid data while preserving backward-compatible sensor naming and behaviour.
 See comments in the code and the detailed sensor notes for more information.
 
-================================================================
+================================================================ 
 This is a Solar Analytics public API integration into Home Assistant.
 
 The solution provides daily cumulative consumed/generated, exported/imported energy (Wh) 
