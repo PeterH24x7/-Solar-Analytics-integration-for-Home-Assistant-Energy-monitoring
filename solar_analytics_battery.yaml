@@ -53,7 +53,7 @@
 #                     - Power Battery - power into (-ve) and out of (+ve) the battery.
 #                 - Added last5min energy attribute to sa_todays_xloadx_total and 
 #                   sa_todays_energy_imported/exported sensors. Units are Wh.
-#        5-Jun-26 - RELEASE 10 - MAJOR INTERNAL OVERALL, BUT EXTERNALLY UNCHANGED BEHAVIOUR
+#        5-Jun-26 - RELEASE 10 - MAJOR INTERNAL OVERHAUL, BUT EXTERNALLY UNCHANGED BEHAVIOUR
 #                 - Migrated to modern template sensor patterns for future HA compatibility.
 #                 - Fixed generation allocation logic to suppress negative xx_energy_last5min 
 #                   generation attributes, ensuring physically valid solar contribution and more 
