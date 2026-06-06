@@ -1,5 +1,5 @@
 title: Power Flow with Battery
-type: custom:power-flow-card-plus
+type: custom:power-flow-card-plus 
 entities:
   battery:
     entity: sensor.sa_battery_power
