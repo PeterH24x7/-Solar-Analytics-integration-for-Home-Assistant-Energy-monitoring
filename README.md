@@ -1,12 +1,11 @@
 # Solar Analytics Integration for Home Assistant Energy Monitoring
 
-   > Now with battery support!
+Last updated for Release 10 6-Jun-26. 
+Release 10 hardens all template sensors against loops, resets, startup conditions and 
+invalid data while preserving backward-compatible sensor naming and behaviour.
+See comments in the code and the detailed sensor notes for more information.
 
 ================================================================
-
-Last updated for Release 9 15-Feb-25. See comments in the code and the detailed sensor notes for more
-information.
-
 This is a Solar Analytics public API integration into Home Assistant.
 
 The solution provides daily cumulative consumed/generated, exported/imported energy (Wh) 
@@ -27,10 +26,10 @@ Solar Analytics hardware set-up:
     3. <solar_analytics_advanced.yaml> - load sensors as above, additionally broken down by total daily 
        kWh sourced from generated or imported sources, including % generated.
        
-    4. <solar_analytics_battery.yaml> - is a modification of solar_analytics_3phase with added battery 
+    4. <solar_analytics_battery.yaml> - is a extension of solar_analytics_3phase with added battery 
        sensor support (13 battery related sensors in all). [NEW as of Release 9]
 
-Included sensors as follows - see solar_analytics_sensors_notes_v9-13Feb25.pdf/xlsx for sensor
+Included sensors as follows - see solar_analytics_sensors_notes_... pdf/xlsx for sensor
 and attribute related naming and usage:
 
     1. Solar Analytics portal, system and solar PV performance status. 
