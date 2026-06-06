@@ -1,4 +1,4 @@
-title: Generated Energy % Usage
+title: Generated Energy % Usage 
 type: entities
 entities:
   - entity: sensor.sa_todays_electric_vehicle_generated_percentage
