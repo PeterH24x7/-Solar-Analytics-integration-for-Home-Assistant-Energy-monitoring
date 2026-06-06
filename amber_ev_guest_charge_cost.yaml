@@ -1,4 +1,4 @@
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- 
 #
 # Guest EV charging integration for Home Assistant Energy Management. 
 # Requires <solar_analytics.yaml> to be installed or an alternative source
