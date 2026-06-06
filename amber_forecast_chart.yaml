@@ -1,4 +1,4 @@
-type: custom:apexcharts-card
+type: custom:apexcharts-card 
 graph_span: 24h
 show:
   last_updated: true
