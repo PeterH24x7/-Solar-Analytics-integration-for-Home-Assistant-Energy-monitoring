@@ -51,6 +51,9 @@
 #                 - Eliminated template loops using `this.state` and state-preserving update logic
 #                   for non-raw energy (e.g. sa_todays_...) and power (e.g. sa_consumed_power) 
 #                   sensors.
+#                 - Introduced monotonic decrease protection for derived total_increasing sensors 
+#                   (import/export/battery splits) to prevent small decreases caused by rounding, unit 
+#                   conversion (Wh ↔ kWh) and calculation drift.
 #                 - Improved overall data validation, stability and resilience across all sensors.
 #                 - Maintained full backward compatibility of entity names, outputs and dashboards.
 #
@@ -1369,8 +1372,10 @@ rest:
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
                   {%- set ns.current_value = ((sensor_data.energy_consumed|float)*12.0/1000)|float(0.0)|round(2) -%}
+                {%- else -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
                 {%- endif -%}
                 {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
               {%- endif -%}
@@ -1558,7 +1563,7 @@ rest:
             {%- endfor -%}
             {%- for sensor_data in value_json.data -%}
               {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-              {%- if ('load_stove' in sensor_data and sensor_data.load_stove is number) -%}
+                {%- if ('load_stove' in sensor_data and sensor_data.load_stove is number) -%}
                   {%- set ns.current_value = ((sensor_data.load_stove|float)*12.0/1000)|float(0.0)|round(2) -%}
                 {%- else -%}
                   {#- data must be bad (none) - default to repeat last value -#}
@@ -1830,11 +1835,11 @@ template:
             {#- --- No change / invalid decrease ---
               Return existing state WITHOUT rewriting to avoid loops -#}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
             {#- Input is invalid (e.g. unavailable) → preserve previous value -#}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1857,10 +1862,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1877,17 +1882,23 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_imported_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {#- BLOCK SMALL DECREASES (rounding / kWh / calc drift) -#}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {#- TRUE RESET (near zero only) -#}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
+            {#- NORMAL INCREASE -#}
             {%- elif new_val > old -%}
               {{- new_val -}}
+            {#- HOLD VALUE -#}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1903,17 +1914,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_exported_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1939,10 +1952,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1965,10 +1978,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -1991,10 +2004,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2017,10 +2030,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2036,17 +2049,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_ev_charger_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-            {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2091,17 +2106,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_ev_charger_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2152,17 +2169,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_air_conditioner_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2208,17 +2227,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_air_conditioner_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2264,17 +2285,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_hot_water_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2328,10 +2351,10 @@ template:
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2378,17 +2401,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_stove_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2436,17 +2461,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_stove_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and new_val < 0.01 -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2557,7 +2584,7 @@ template:
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if new_val != old else this.state -}}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2588,7 +2615,7 @@ template:
               {{- 100.0 if 100.0 != old else this.state -}}
             {%- endif -%}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2960,7 +2987,7 @@ template:
             {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
             {{- new_val if new_val != old else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
@@ -2993,7 +3020,7 @@ template:
             {%- if imported > 100 -%}
               {{- (cost / imported * 1000.0)|float(0.0)|round(3) -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
             0.0
@@ -3032,7 +3059,7 @@ template:
             {%- if exported > 100 -%}
               {{- (compensation / exported * 1000.0)|float(0.0)|round(3) -}}
             {%- else -%}
-              {{- this.state|float(0.0) -}}
+              {{- old -}}
             {%- endif -%}
           {%- else -%}
             0.0
