@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 10 FINAL <<< SOLAR_ANALYTICS_ADVANCED.YAML SOLUTION
+# >>> RELEASE 10-- FINAL <<< SOLAR_ANALYTICS_ADVANCED.YAML SOLUTION
 #
 # Release 10 hardens all template sensors against loops, resets, startup conditions and 
 # invalid data while preserving backward-compatible behaviour. See update notes for more info.
@@ -21,7 +21,7 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 5-Jun-26 as Release 10 - see update notes below.
+# Last updated: 25-Jun-26 as Release 10 - see update notes below.
 #
 # Updates:
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -35,7 +35,7 @@
 #                 - Minor code redo to align with solar_analytics_battery.yaml functioning.
 #                 - Added last5min energy attribute to sa_todays_xloadx_total and
 #                   sa_todays_energy_imported/exported sensors. Units are Wh.
-#        5-Jun-26 - RELEASE 10 - MAJOR INTERNAL OVERHAUL, BUT EXTERNALLY UNCHANGED BEHAVIOUR
+#       25-Jun-26 - RELEASE 10 - MAJOR INTERNAL OVERHAUL, BUT EXTERNALLY UNCHANGED BEHAVIOUR
 #                 - Migrated to modern template sensor patterns for future HA compatibility.
 #                 - Fixed generation allocation logic to suppress negative xx_energy_last5min 
 #                   generation attributes, ensuring physically valid solar contribution and more 
@@ -44,8 +44,9 @@
 #                   persisting and reusing the last valid value, improving continuity and visual 
 #                   accuracy of energy trends
 #                 - Added change-guard logic to prevent unnecessary and repeated state updates.
-#                 - Implemented reset-aware handling to correctly manage midnight and transient 
-#                   low-value sensor "rounding noise" change conditions.
+#                 - Improved reset detection with large drop threshold (old - new > RESET_THRESHOLD)
+#                   check. Ensures reliable midnight resets for continuous-load systems while 
+#                   ignoring small drift/rounding noise.
 #                 - Added numeric-safe fallback handling to ensure valid sensor states during 
 #                   startup.
 #                 - Eliminated template loops using `this.state` and state-preserving update logic
@@ -139,7 +140,7 @@ automation:
           seconds: 5
     condition: 
       - condition: template
-        value_template: "{{- states('sensor.sa_auth_token')|is_number -}}"
+        value_template: "{{- states('sensor.sa_auth_token') is number -}}"
     action:
       - service: timer.start
         data:
@@ -1815,30 +1816,25 @@ template:
         device_class: "energy"
         state_class: "total_increasing"
         state: >-
-          {#- Read the new raw value from the upstream sensor (string) -#}
           {%- set new = states('sensor.sa_data_by_5min_energy_consumed_total')|float(none) -%}
-          {#- Safely get the previous value of THIS sensor (no self-dependency loop) -#}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
-            {#- Convert to numeric only after validating -#}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {#- --- Reset handling ---
-              If value drops to very small (<1) and below previous,
-              treat as a legitimate reset (e.g. midnight), BUT
-              only update if it has actually changed to avoid loops -#}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if new_val != old else this.state|float(0.0) -}}
-            {#- --- Normal operation ---
-              Allow updates only when the value increases (monotonic behaviour) -#}
+            {#- SMALL NEGATIVE DRIFT (rounding, calc noise) -#}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {#- TRUE RESET (large drop) -#}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
+            {#- NORMAL INCREASE -#}
             {%- elif new_val > old -%}
               {{- new_val -}}
-            {#- --- No change / invalid decrease ---
-              Return existing state WITHOUT rewriting to avoid loops -#}
+            {#- HOLD VALUE -#}
             {%- else -%}
               {{- old -}}
             {%- endif -%}
           {%- else -%}
-            {#- Input is invalid (e.g. unavailable) → preserve previous value -#}
             {{- old -}}
           {%- endif -%}
         attributes:
@@ -1855,10 +1851,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_energy_generated_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -1882,18 +1881,15 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_imported_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {#- BLOCK SMALL DECREASES (rounding / kWh / calc drift) -#}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {#- TRUE RESET (near zero only) -#}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
-            {#- NORMAL INCREASE -#}
             {%- elif new_val > old -%}
               {{- new_val -}}
-            {#- HOLD VALUE -#}
             {%- else -%}
               {{- old -}}
             {%- endif -%}
@@ -1914,11 +1910,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_exported_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -1945,10 +1942,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_air_conditioner_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -1971,10 +1971,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_ev_charger_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -1997,10 +2000,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_hot_water_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -2023,10 +2029,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_stove_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -2049,11 +2058,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_ev_charger_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2106,11 +2116,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_ev_charger_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2169,11 +2180,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_air_conditioner_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2227,11 +2239,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_air_conditioner_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2285,11 +2298,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_hot_water_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2344,10 +2358,13 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_hot_water_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {%- if new_val < old and new_val < 1 -%}
-              {{- new_val if (new_val - old)|abs > 0.0001 else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
             {%- else -%}
@@ -2401,11 +2418,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_stove_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2461,11 +2479,12 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_load_stove_imported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
           {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {%- if new_val < old and (old - new_val) < 0.01 -%}
               {{- old -}}
-            {%- elif new_val < old and new_val < 0.01 -%}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
               {{- new_val -}}
             {%- elif new_val > old -%}
               {{- new_val -}}
@@ -2580,9 +2599,18 @@ template:
         state: >-
           {%- set new = states('sensor.sa_data_by_5min_consumed_solar_total')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- set RESET_THRESHOLD = 5.0 -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {{- new_val if new_val != old else this.state -}}
+            {%- if new_val < old and (old - new_val) < 0.01 -%}
+              {{- old -}}
+            {%- elif new_val < old and (old - new_val) > RESET_THRESHOLD -%}
+              {{- new_val -}}
+            {%- elif new_val > old -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
           {%- else -%}
             {{- old -}}
           {%- endif -%}
@@ -2731,70 +2759,18 @@ template:
         device_class: "energy"
         state_class: "total"
         state: >-
-          {#- Pull upstream hourly expected generation value and safely convert to float.
-              Using float(none) allows detection of invalid input (unknown/unavailable).
-            -#}
           {%- set new = states('sensor.sa_data_by_hour_generated_expected')|float(none) -%}
-          {#- Read this sensors previous state using float() because HA states are strings.
-              Using float(0.0) ensures we always have a numeric baseline.
-            -#}
           {%- set old = this.state|float(0.0) -%}
-          {#- CRITICAL: Clamp OLD value as well as NEW value.
-              WHY:
-              - Near-zero values (e.g. 1e-5 → 1e-8 → 1e-11) can continue stepping down
-              - If only new_val is clamped, old remains slightly above zero
-              - This causes HA to see a "real change" → triggers loop
-              RESULT:
-              - Both sides normalised → no artificial change → loop eliminated
-            -#}
-          {%- if old < 0.0001 -%}
-            {%- set old = 0.0 -%}
-          {%- endif -%}
-          {#- Only proceed if upstream value is valid (i.e. not None)
-              preventing bad API data from corrupting the sensor.
-            -#}
-          {%- if new is not none -%}
-            {#- Convert new value to float for consistent numeric processing. -#}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {#- CLAMP VERY SMALL VALUES TO ZERO
-                - Near-zero values can oscillate endlessly due to rounding noise
-                - Causes repeated micro-updates → HA template loop detection
-                - These values are physically meaningless (no real solar generation)
-              RESULT:
-                - Stabilises the sensor at zero near midnight / resets
-              -#}
+            {#- Clamp near-zero noise -#}
             {%- if new_val < 0.0001 -%}
-              {%- set new_val = 0.0 -%}
-            {%- endif -%}
-            {#- RESET HANDLING BRANCH (e.g. midnight rollover)
-                Condition:
-                  - new value is less than previous value AND still near zero
-                WHY:
-                  - Daily totals reset to ~0 at midnight
-                  - Allow real reset while suppressing micro fluctuations
-              -#}
-            {%- if new_val < old and new_val < 1 -%}
-              {#- Only accept reset if the change is meaningful
-                  - Prevents tiny numerical drift triggering updates
-                  - Reduces HA churn and avoids loop detection
-                -#}
-              {{- new_val if (new_val - old)|abs > 0.0001 else old -}}
-            {#- NORMAL OPERATION BRANCH (monotonic increase)
-                Expected behaviour for cumulative totals
-              -#}
-            {%- elif new_val > old -%}
-              {{- new_val -}}
-            {#- NO CHANGE / INVALID DECREASE
-                - Ignore jitter, noise or inconsistent API values
-                - Preserve last valid stable state
-              -#}
-            {%- else -%}
+              0.0
+            {%- elif (new_val - old)|abs < 0.01 -%}
               {{- old -}}
+            {%- else -%}
+              {{- new_val -}}
             {%- endif -%}
-          {#- INVALID INPUT HANDLING
-              - Upstream sensor unavailable or invalid
-              - Preserve previous valid value instead of resetting
-            -#}
           {%- else -%}
             {{- old -}}
           {%- endif -%}
@@ -2826,7 +2802,7 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_consumed')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
@@ -2845,7 +2821,7 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_generated')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
@@ -2864,7 +2840,7 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_imported_exported')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
@@ -2908,27 +2884,6 @@ template:
           {%- set load_ac = states('sensor.sa_data_by_5min_load_air_conditioner_total')|float(0.0) -%}
           {%- set load_hw = states('sensor.sa_data_by_5min_load_hot_water_total')|float(0.0) -%}
           {%- set load_st = states('sensor.sa_data_by_5min_load_stove_total')|float(0.0) -%}
-
-          {#- NON-STANDARD ENERGY SENSORS - START -#}
-            {%- set lights = states('sensor.all_lights_energy_today')|float(0.0) -%} {#- Assumed kWh -#} 
-            {%- set lights_unit = state_attr('sensor.all_lights_energy_today', 'unit_of_measurement')|default('') -%}
-            {%- set lights_total = 0.0 -%}
-            {%- if lights_unit == 'kWh' -%}
-              {%- set lights_total = lights * 1000.0 if lights < 10.0 else 0.0 -%}
-            {%- elif lights_unit == 'Wh' -%}
-              {%- set lights_total = lights if lights < 10000.0 else 0.0 -%}
-            {%- endif -%}
-
-            {%- set powerpoints = states('sensor.all_powerpoints_energy_today')|float(0.0) -%}
-            {%- set powerpoints_unit = state_attr('sensor.all_powerpoints_energy_today', 'unit_of_measurement')|default('') -%}
-            {%- set powerpoints_total = 0.0 -%}
-            {%- if powerpoints_unit == 'kWh' -%}
-              {%- set powerpoints_total = powerpoints * 1000.0 if powerpoints < 10.0 else 0.0 -%}
-            {%- elif powerpoints_unit == 'Wh' -%}
-              {%- set powerpoints_total = powerpoints if powerpoints < 10000.0 else 0.0 -%}
-            {%- endif -%}
-          {#- NON-STANDARD ENERGY SENSORS - END -#}
-
           {%- set old = this.state|float(0.0) -%}
           {%- set most_recent_sensor_data = 0.0 -%}
           {%- if consumed is not none and consumed > 0.0 -%}
@@ -2937,11 +2892,9 @@ template:
                   - load_ac
                   - load_hw
                   - load_st
-                  - lights_total
-                  - powerpoints_total
                 )|float(0.0)|round(4) -%}
             {#- Result should never be less than zero. -#}
-            {% if most_recent_sensor_data < 0 -%}
+            {%- if most_recent_sensor_data < 0 -%}
               {%- set most_recent_sensor_data = 0.0 -%}
             {%- endif -%}
             {%- if meter_reset -%}
@@ -2983,7 +2936,7 @@ template:
           {%- set import_raw = states('sensor.sa_todays_energy_imported_cost') -%}
           {%- set export_raw = states('sensor.sa_todays_energy_exported_compensation') -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if import_raw|is_number and export_raw|is_number -%}
+          {%- if import_raw is number and export_raw is number -%}
             {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
             {{- new_val if new_val != old else this.state|float(0.0) -}}
           {%- else -%}
