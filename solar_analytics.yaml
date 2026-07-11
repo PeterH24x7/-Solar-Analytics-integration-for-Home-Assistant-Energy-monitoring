@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 10-- FINAL <<< SOLAR_ANALYTICS.YAML STANDARD SOLUTION
+# >>> RELEASE 10-1- FINAL <<< SOLAR_ANALYTICS.YAML STANDARD SOLUTION
 #
 # Release 10 hardens all template sensors against loops, resets, startup conditions and 
 # invalid data while preserving backward-compatible behaviour. See update notes for more info.
@@ -140,7 +140,7 @@ automation:
           seconds: 5
     condition: 
       - condition: template
-        value_template: "{{- states('sensor.sa_auth_token') is number -}}"
+        value_template: "{{- states('sensor.sa_auth_token')|int(none) is number -}}"
     action:
       - service: timer.start
         data:
@@ -2246,8 +2246,8 @@ template:
         icon: mdi:cash
         state_class: "total"
         state: >-
-          {%- set import_raw = states('sensor.sa_todays_energy_imported_cost') -%}
-          {%- set export_raw = states('sensor.sa_todays_energy_exported_compensation') -%}
+          {%- set import_raw = states('sensor.sa_todays_energy_imported_cost')|float(none) -%}
+          {%- set export_raw = states('sensor.sa_todays_energy_exported_compensation')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
           {%- if import_raw is number and export_raw is number -%}
             {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
