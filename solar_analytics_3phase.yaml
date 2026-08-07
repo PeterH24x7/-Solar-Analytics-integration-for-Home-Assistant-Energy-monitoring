@@ -1,8 +1,8 @@
 # -----------------------------------------------------------------------------
 # >>> RELEASE 11 FINAL <<< SOLAR_ANALYTICS_3PHASE.YAML SOLUTION
 #
-# Release 10 hardens all template sensors against loops, resets, startup conditions and 
-# invalid data while preserving backward-compatible behaviour. See update notes for more info.
+# Release 11 adds resilient token, 5min, live and hourly data recovery from outages,
+# retries, delayed publication and startup/reload conditions with recovery diagnostics.
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 #
@@ -317,7 +317,7 @@ automation:
               duration: "00:05:00"
     mode: single
 
-# Automation to cancel the retry timer on token refresh success.
+  # Automation to cancel the retry timer on token refresh success.
   - id: "sa_token_retry_success"
     alias: SA Token Retry Success
     description: "Cancel failed-token retry timer after token refresh succeeds."
@@ -405,17 +405,6 @@ automation:
                                   - as_timestamp(states('sensor.sa_data_by_5min_time_stamp'))
                               ) / 60  ) >= 6 )) -}}
     action:
-
-      - service: system_log.write
-        data:
-          level: warning
-          logger: solar_analytics.release11
-          message: >
-            RETRY_START |
-            timer_before={{ states('timer.sa_data_by_5min_retry_timer') }}
-            retry_count={{ states('counter_or_helper_here') }}
-            poll_attempt={{ states('input_datetime.sa_data_by_5min_last_poll_attempt') }}
-      
       - service: timer.start
         target:
           entity_id: timer.sa_data_by_5min_retry_timer
@@ -437,19 +426,6 @@ automation:
           minutes: 0
           seconds: 5
     action:
-
-      - service: system_log.write
-        data:
-          level: warning
-          logger: solar_analytics.release11
-          message: >
-            RETRY_TRIGGER |
-            timer={{ states('timer.sa_data_by_5min_retry_timer') }}
-            retry_count={{ state_attr(
-              'sensor.sa_data_by_5min_time_stamp_cached',
-              'debug_retry_count_attr'
-            ) }}
-
       - service: homeassistant.update_entity
         target:
           entity_id: sensor.sa_data_by_5min_time_stamp
@@ -473,6 +449,7 @@ automation:
             data:
               duration: "00:00:30"
     mode: single
+
   # Automation to cancel 5 minute data retry timer after successful refresh.
   - id: "sa_data_by_5min_retry_success"
     alias: SA Data by 5min Retry Success
@@ -2737,7 +2714,7 @@ template:
       - name: "Total Energy History"
         default_entity_id: sensor.sa_todays_energy_history
         unique_id: sa_todays_energy_history
-        state: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        state: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         icon: mdi:sun-clock
         attributes:
           times: >-
@@ -2768,7 +2745,6 @@ template:
         - sensor.sa_data_by_hour_generated_expected
 
     sensor:
-
       # Expected solar generation to current hour - updated hourly
       #
       # Importantly, the sensor is stabilised by clamping near-zero noise variations
@@ -2784,16 +2760,17 @@ template:
       - name: "Total Energy Generated Expected"
         default_entity_id: sensor.sa_todays_energy_generated_expected_total
         unique_id: sa_todays_energy_generated_expected_total
-        unit_of_measurement: "Wh"
+        unit_of_measurement: "kWh"
         icon: mdi:solar-power
-        state_class: "measurement"
+        device_class: "energy"
+        state_class: "total"
         state: >-
           {%- set new = states('sensor.sa_data_by_hour_generated_expected')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
           {%- if now().hour == 0 -%}
             0.0
           {%- elif new is number -%}
-            {{- new -}}
+            {{- new|float(0.0) / 1000 -}}
           {%- else -%}
             {{- old -}}
           {%- endif -%}
@@ -3054,3 +3031,4 @@ template:
           {{- states('sensor.sa_data_by_5min_exported_total')|float(0.0) > 0 -}}
 
 # =============================================================================
+

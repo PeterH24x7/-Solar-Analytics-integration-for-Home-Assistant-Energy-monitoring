@@ -1,8 +1,8 @@
 # -----------------------------------------------------------------------------
-# >>> RELEASE 10-1- FINAL <<< BATTERY STORAGE SOLUTION 
+# >>> RELEASE 11 FINAL <<< BATTERY STORAGE SOLUTION 
 #
-# Release 10 hardens all template sensors against loops, resets, startup conditions and 
-# invalid data while preserving backward-compatible behaviour. See update notes for more info.
+# Release 11 adds resilient token, 5min, live and hourly data recovery from outages,
+# retries, delayed publication and startup/reload conditions with recovery diagnostics.
 #
 # SOLAR ANALYTICS integration for Home Assistant Energy Monitoring
 #
@@ -22,7 +22,7 @@
 #
 # Created: 7-Jan-2022
 #
-# Last updated: 25-Jun-26 as Release 10 - see update notes below.
+# Last updated: 24-Jul-26 as Release 11 - see update notes below.
 #
 # Updates: 
 #     16-Jan-2022 - INITIAL RELEASE 1
@@ -68,13 +68,66 @@
 #                 - Added numeric-safe fallback handling to ensure valid sensor states during 
 #                   startup.
 #                 - Eliminated template loops using `this.state` and state-preserving update logic
-#                   for non-raw energy (e.g. sa_todays_...) and power (e.g. sa_consumed_power) 
+#                   for non-raw energy (e.g. sa_todays_...) and power (e.g. sa_consumption_power) 
 #                   sensors.
 #                 - Introduced monotonic decrease protection for derived total_increasing sensors 
 #                   (import/export/battery splits) to prevent small decreases caused by rounding, unit 
 #                   conversion (Wh ↔ kWh) and calculation drift.
 #                 - Improved overall data validation, stability and resilience across all sensors.
 #                 - Maintained full backward compatibility of entity names, outputs and dashboards.
+#       24-Jul-26 - RELEASE 11 - TOKEN REFRESH, LIVE DATA, 5MIN and HOUR DATA RESILIENCE
+#                 - Improved resilience against Solar Analytics API outages, token refresh failures,
+#                   delayed/missing 5-minute data publication, live data publication delays and
+#                   associated HA startup/reload conditions.
+#                 - Authentication token - sa_auth_token_cached:
+#                   - Added cached token preservation with automatic retry, recovery and failure
+#                     diagnostics.
+#                   - Records refresh failure reason, retry activity, recovery timestamps,
+#                     failure duration and refresh failure counts as attributes.
+#                 - 5-minute data - sa_data_by_5min_...:
+#                   - Added sa_data_by_5min_time_stamp_cached to preserve the last valid
+#                     5-minute timestamp during Solar Analytics API outages, delayed data publication
+#                     events and Home Assistant startup/reload conditions.
+#                   - Added automatic retry and recovery logic for both unavailable timestamps and
+#                     stale 5-minute data publication events.
+#                   - Added age-based stale timestamp detection to identify delayed publication of
+#                     5-minute data before a timestamp continuity gap occurs.
+#                   - Supports up to 3 retry attempts per failed 5-minute refresh cycle, with
+#                     automatic recovery when data publication resumes.
+#                   - Distinguishes between stale and unavailable refresh failures while providing a
+#                     common outage tracking, retry and recovery model.
+#                   - Records failure reason, retry activity, recovery status, failure/recovery
+#                     timestamps, outage gap statistics and timestamp continuity diagnostics as
+#                     sensor attributes.
+#                   - Distinguishes between recovered outages and permanently lost 5-minute
+#                     intervals resulting from extended publication failures.
+#                 - Live data - sa_live_site_data_...:
+#                   - Added live-data timestamp continuity for derived power sensors, preventing
+#                     temporary unavailable states during known top-of-hour publication gaps.
+#                   - Added scheduled-poll-aware live-data recovery logic to bridge temporary
+#                     publication gaps, stale timestamp responses and short outages.
+#                   - Added expected live-data timestamp preservation using a breadcrumb-based
+#                     continuity model to bridge temporary publication gaps and outages while
+#                     preserving timestamp continuity.
+#                   - Added live-data failure reason, stale timestamp, recovery tracking and
+#                     synthetic timestamp diagnostics, including outage counts, recovery
+#                     timestamps and synthetic timestamp generation counts.
+#                 - Hourly data - sa_data_by_hour_...:
+#                   - For sa_todays_energy_generated_expected_total, now manages 
+#                     sa_data_by_hour_time_stamp and sa_data_by_hour_generated_expected 
+#                     unavailability (often occurs after midnight and before the early morning 
+#                     reset), then the previous value is retained and the time_stamp attribute 
+#                     set to the last update time. If the update of the value or the time_stamp 
+#                     fails, then these are reported true by attributes update_failed and 
+#                     timestamp_failed respectively.
+#                   - sa_data_by_hour_generated_expected resets to zero on first update
+#                     after midnight.
+#                 - sa_status:
+#                   * POTENTIAL breaking change for user configurations that directly use the state of 
+#                     sa_status, which no longer returns the status text; instead use sa_mer_status.
+#                   - Changed sa_status state to a refresh timestamp to guarantee detectable updates; 
+#                     mer_status/dashboard_status/mer_percentage remain unchanged via attributes and 
+#                     now include a time_stamp attribute.
 #
 # This code is provided as-is and without any warrantee or guarantees. 
 # Further public contributions and enhancements are welcomed.
@@ -124,13 +177,30 @@
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# INPUT_TEXT
+# INPUT_TEXT helper
 input_text:
   # Define the Solar Analytics site_id value is required in URLs used in gets below - e.g. 36304.
   # See the Solar Analytics user portal to find your site id or see the collected sa_site_list
   # attributes as defined below.
   sa_site_id:
     initial: !secret sa_site_id
+
+# -----------------------------------------------------------------------------
+# INPUT_DATETIME helper
+input_datetime:
+  # Helper records the timestamp of each scheduled 5-minute data refresh attempt.
+  # Updated by automation sa_data_by_5min_trigger after each scheduled poll attempt.
+  # Not used for data storage or reporting. Acts as an internal retry marker only.
+  #
+  # Used by sa_data_by_5min_time_stamp_cached to:
+  #   - detect scheduled poll attempts during outages
+  #   - reset retry cycle counters
+  #   - trigger new retry cycles after failed polls
+  #   - support extended outage recovery logic
+  #
+  sa_data_by_5min_last_poll_attempt:
+    has_date: true
+    has_time: true
 
 # -----------------------------------------------------------------------------
 # TIMERS
@@ -141,36 +211,51 @@ timer:
     icon: mdi:clock-check
     restore: true
 
+  # Timer for retrying failed token refreshes.
+  sa_token_retry_timer:
+    duration: 0
+    icon: mdi:timer-refresh
+    restore: true
+
+  # Timer for retrying failed 5 minute data refreshes.
+  sa_data_by_5min_retry_timer:
+    duration: 0
+    icon: mdi:timer-refresh
+    restore: false
+
 # -----------------------------------------------------------------------------
 # AUTOMATIONS
 automation:
-  # Automation to restart timer when the authentication token is refreshed.
+  # Automation to restart timer when a valid authentication token is refreshed.
   - id: "sa_token_expiry_update"
     alias: SA Token Expiry update
-    description: ""
+    description: "Restart token expiry timer when a valid token is cached."
     trigger:
       - platform: state
         entity_id:
-          - sensor.sa_auth_token
+          - sensor.sa_auth_token_cached
         for:
           hours: 0
           minutes: 0
           seconds: 5
-    condition: 
+    condition:
       - condition: template
-        value_template: "{{- states('sensor.sa_auth_token')|int(none) is number -}}"
+        value_template: >
+          {{- states('sensor.sa_auth_token_cached')|int(none) is number
+            and state_attr('sensor.sa_auth_token_cached','token') is string
+            and state_attr('sensor.sa_auth_token_cached','token')|length > 20 -}}
     action:
       - service: timer.start
         data:
-          duration: "{{- states('sensor.sa_auth_token')|int(0) -}}"
+          duration: "{{- states('sensor.sa_auth_token_cached')|int(0) -}}"
         target:
           entity_id: timer.sa_token_expiry_timer
     mode: single
 
-  # Automation to refresh the token when the timer expires.
+  # Automation to refresh the authentication token when the timer expires.
   - id: "sa_token_refresh_on_timer_expiry"
     alias: SA Token refresh on Timer expiry
-    description: ""
+    description: "Refresh the token when the timer expires"
     trigger:
       - platform: state
         entity_id:
@@ -188,8 +273,93 @@ automation:
           entity_id: sensor.sa_auth_token
     mode: single
 
+  # Automation to start a retry timer after a failed token refresh.
+  - id: "sa_token_refresh_failure_retry_start"
+    alias: SA Token Refresh Failure Retry Start
+    description: "Start 5 minute token refresh retry timer after the raw token refresh fails."
+    trigger:
+      - platform: state
+        entity_id: sensor.sa_auth_token
+        to: "unavailable"
+        for:
+          seconds: 10
+      - platform: state
+        entity_id: sensor.sa_auth_token
+        to: "unknown"
+        for:
+          seconds: 10
+      - platform: state
+        entity_id: sensor.sa_auth_token
+        to: "none"
+        for:
+          seconds: 10
+    condition:
+      - condition: state
+        entity_id: timer.sa_token_retry_timer
+        state: "idle"
+    action:
+      - service: timer.start
+        target:
+          entity_id: timer.sa_token_retry_timer
+        data:
+          duration: "00:05:00"
+    mode: restart
+
+  # Automation to retry token refresh on retry timer expiry, restart the retry timer 
+  # on failure.
+  - id: "sa_token_retry_refresh"
+    alias: SA Token Retry Refresh
+    description: "Retry Solar Analytics token refresh every 5 minutes until successful."
+    trigger:
+      - platform: state
+        entity_id: timer.sa_token_retry_timer
+        to: "idle"
+        for:
+          seconds: 5
+    action:
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.sa_auth_token
+      - delay:
+          seconds: 15
+      - if:
+          - condition: template
+            value_template: >-
+              {{- states('sensor.sa_auth_token') in
+                  ['unavailable','unknown','none',''] -}}
+        then:
+          - service: timer.start
+            target:
+              entity_id: timer.sa_token_retry_timer
+            data:
+              duration: "00:05:00"
+    mode: single
+
+  # Automation to cancel the retry timer on token refresh success.
+  - id: "sa_token_retry_success"
+    alias: SA Token Retry Success
+    description: "Cancel failed-token retry timer after token refresh succeeds."
+    trigger:
+      - platform: state
+        entity_id: sensor.sa_auth_token_cached
+    condition:
+      - condition: template
+        value_template: >-
+          {%- set was_failed =
+                trigger.from_state.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+          {%- set failed =
+                state_attr('sensor.sa_auth_token_cached', 'refresh_failed')
+                  in [true,'true','True'] -%}
+          {{- was_failed and not failed -}}
+    action:
+      - service: timer.cancel
+        target:
+          entity_id: timer.sa_token_retry_timer
+    mode: single
+
   # Automated trigger for sa_data_by_5min_... sensors - fires every 5 minutes.
-  ##### In case of network problems add 1min extra offset as follows:
+  ##### In case of network problems, try adding 1min extra offset as follows:
   ##### >>>>> condition: "{{- ( (now().minute + 1) is divisibleby(5) ) and ( ( (now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) -}}"
   - id: "sa_data_by_5min_trigger"
     alias: SA Data by 5min Trigger
@@ -202,9 +372,124 @@ automation:
           and ( ( ( now().second // 10) + (states('input_text.sa_site_id')|int(0) % 6) ) == 5 ) -}}
     action:
       - service: homeassistant.update_entity
-        data: {}
         target:
           entity_id: sensor.sa_data_by_5min_time_stamp
+      - delay:
+          seconds: 20
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.sa_data_by_5min_last_poll_attempt
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+    mode: single
+
+  # Automation to start retry timer after failed 5 minute data refresh.
+  # Start retry timer immediately when the raw 5 minute timestamp becomes
+  # unavailable. Failure accounting is deferred until 3x retry attempts complete.
+  # Will try 3x again if next schedule update also fails.
+  - id: "sa_data_by_5min_retry_start"
+    alias: SA Data by 5min Retry Start
+    description: "Start 1 minute retry timer after failed 5 minute data refresh."
+    trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        to: "unavailable"
+        for:
+          seconds: 10
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        to: "unknown"
+        for:
+          seconds: 10
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        to: "none"
+        for:
+          seconds: 10
+      # New scheduled 5-minute poll attempt marker.
+      # This fires even when the raw timestamp remains continuously unavailable.
+      - platform: state
+        entity_id: input_datetime.sa_data_by_5min_last_poll_attempt
+    condition:
+      - condition: template
+        value_template: >-
+          {{- states('timer.sa_data_by_5min_retry_timer') != 'active'
+                and (
+                      states('sensor.sa_data_by_5min_time_stamp')
+                        in ['unavailable','unknown','none']
+                      or (states('sensor.sa_data_by_5min_time_stamp')
+                            not in ['unavailable','unknown','none','']
+                        and ((as_timestamp(now())
+                                  - as_timestamp(states('sensor.sa_data_by_5min_time_stamp'))
+                              ) / 60  ) >= 6 )) -}}
+    action:
+      - service: timer.start
+        target:
+          entity_id: timer.sa_data_by_5min_retry_timer
+        data:
+          duration: "00:01:00"
+    mode: restart
+
+  # Automation to retry failed 5 minute data refresh, up to 3 attempts.
+  - id: "sa_data_by_5min_trigger_retry"
+    alias: SA Data by 5min Trigger Retry
+    description: "Retry failed 5 minute data refresh every minute up to 3 times."
+    trigger:
+      - platform: state
+        entity_id:
+          - timer.sa_data_by_5min_retry_timer
+        to: idle
+        for:
+          hours: 0
+          minutes: 0
+          seconds: 5
+    action:
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.sa_data_by_5min_time_stamp
+      - delay:
+          seconds: 10
+      - if:
+          - condition: template
+            value_template: >-
+              {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+              {%- set stale = ts not in ['unknown','unavailable','none','']
+                    and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+              {{- state_attr('sensor.sa_data_by_5min_time_stamp_cached',
+                  'update_failed') in [true,'true','True']
+                and state_attr('sensor.sa_data_by_5min_time_stamp_cached',
+                  'update_failed_last_retry_count')|int(0) < 3
+                and (ts in ['unknown','unavailable','none',''] or stale) -}}
+        then:
+          - service: timer.start
+            target:
+              entity_id: timer.sa_data_by_5min_retry_timer
+            data:
+              duration: "00:00:30"
+    mode: single
+
+  # Automation to cancel 5 minute data retry timer after successful refresh.
+  - id: "sa_data_by_5min_retry_success"
+    alias: SA Data by 5min Retry Success
+    description: "Cancel 5 minute data retry timer after successful data refresh."
+    trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp_cached
+    condition:
+      - condition: template
+        value_template: >-
+          {%- set was_failed =
+                trigger.from_state.attributes.update_failed|default(false)
+                in [true,'true','True'] -%}
+          {%- set failed =
+                state_attr('sensor.sa_data_by_5min_time_stamp_cached',
+                          'update_failed')
+                in [true,'true','True'] -%}
+          {{- was_failed and not failed -}}
+    action:
+      - service: timer.cancel
+        target:
+          entity_id: timer.sa_data_by_5min_retry_timer
     mode: single
 
   # Automated trigger for sa_live_site_data_... sensors - fires every minute.
@@ -222,6 +507,13 @@ automation:
         data: {}
         target:
           entity_id: sensor.sa_live_site_data_time_stamp
+      # Allow REST update to complete before evaluating expected timestamp.
+      - delay:
+          seconds: 5
+      # Marker event used by sa_live_site_data_time_stamp_expected.
+      - event: sa_live_site_data_poll_completed
+        event_data:
+          source: sa_live_site_data_trigger
     mode: single
 
   # Automated trigger for sa_data_by_hour_... sensors fires every hour.
@@ -241,15 +533,65 @@ automation:
           entity_id: sensor.sa_data_by_hour_time_stamp
     mode: single
 
+  # On 5min data recovery, refresh status sensor and recover hourly sensors if required.
+  - id: "sa_data_refresh_on_5min_recovery"
+    alias: SA Data Refresh On 5 Minute Recovery
+    description: >-
+      Refresh status sensor and recover hourly data sensors
+      when 5 minute data recovers after an outage.
+    trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        from: "unavailable"
+        not_to:
+          - "unknown"
+          - "unavailable"
+          - "none"
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        from: "unknown"
+        not_to:
+          - "unknown"
+          - "unavailable"
+          - "none"
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp
+        from: "none"
+        not_to:
+          - "unknown"
+          - "unavailable"
+          - "none"
+    action:
+      - delay:
+          seconds: 30
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.sa_status
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{- states('sensor.sa_data_by_hour_time_stamp')
+                      in ['unavailable', 'unknown', 'none']
+                    or states('sensor.sa_data_by_hour_generated_expected')
+                      in ['unavailable', 'unknown', 'none'] -}}
+            sequence:
+              - service: homeassistant.update_entity
+                target:
+                  entity_id:
+                    - sensor.sa_data_by_hour_time_stamp
+                    - sensor.sa_data_by_hour_generated_expected
+    mode: single
+
   # Home Assistant manual trigger to refresh all SA get sensors.
   - id: "sa_refresh_all_rest_gets"
     alias: SA Refresh all REST data gets
-    description: "Useful start-up automation that can be manually run to refresh all REST data gets."
-    trigger: []
-    condition: []
+    description: "Useful automation to force manual refresh all REST data gets."
+    trigger:
+      - platform: event
+        event_type: sa_refresh_all_rest_gets
     action:
       - service: homeassistant.update_entity
-        data: {}
         target:
           entity_id:
             - sensor.sa_auth_token
@@ -290,7 +632,7 @@ rest:
   - resource: "https://portal.solaranalytics.com.au/api/v3/site_list?hardware=true&capacity=true&subscription=true"
     headers: 
       Authorization: >-
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 3600
     sensor:
       - name: sa_site_list
@@ -320,29 +662,30 @@ rest:
 
   #
   # Solar Analytics - get the site status for the specified site_id.
-  # Updated every hour.
+  # Updated every hour and on failure recovery.
   #
-  # 30-Oct-24 - extra attributes - not always available. 
-  #   Decided against use of unsupported v4 (not in public API, reporting showed 
+  # 30-Oct-24 - extra attributes - not always available.
+  #   Decided against use of unsupported v4 (not in public API, reporting showed
   #   some inconsistency w/ v3).
+  #
+  # 24-Jul-26 - sa_status state changed to current time of update to guarantee
+  #   refresh (else no data changes). Attribute mer_status as used in sensor 
+  #   sa_mer_status now with new state as its time_stamp attribute.
+  #   Also applies to sensors sa_dashboard_status and sa_mer_percentage.
   #
   - resource_template:
       https://portal.solaranalytics.com.au/api/v3/site_status/{{-
       states('input_text.sa_site_id')
       -}}
-    headers: 
+    headers:
       Authorization: >-
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 3600
     sensor:
       - name: sa_status
         unique_id: sa_status
         value_template: >-
-          {%- if value_json is defined and value_json.data is defined -%}
-            {{- value_json.data.mer_status -}}
-          {%- else -%}
-            Invalid
-          {%- endif -%}
+          {{- now().strftime('%Y-%m-%d %H:%M:%S') -}}
         json_attributes_path: "$.data"
         json_attributes:
           - "dashboard_status"
@@ -370,14 +713,16 @@ rest:
   # Solar Analytics - get the site fault status for the specified site_id.
   # Updated every 5 minutes.
   #
-  # Note: this is not a published API 'get', but is used by the SA portal to show a sites fault status (if any).
+  # Note: this is not a published API 'get', but is used by the SA portal to show a 
+  # sites fault status (if any).
+  #
   - resource_template:
       https://portal.solaranalytics.com.au/api/v4/site_status/{{-
       states('input_text.sa_site_id')
       -}}?event_group=all
     headers:
       Authorization: >-
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 300
     sensor:
       - name: sa_status_log_entry
@@ -435,7 +780,7 @@ rest:
       -}}
     headers:
       Authorization: >-
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 0
     # REST SENSORS FOR sa_data_by_5min...
     sensor:
@@ -805,7 +1150,7 @@ rest:
                           + sensor_data.energy_generated|float(0.0) -%}
                   {%- else -%}
                     {%- set ns.solar_consumed = ns.solar_consumed|float
-                          + ns.consumed_home|float(0.0) -%}                    
+                          + ns.consumed_home|float(0.0) -%}                  
                   {%- endif -%}
                 {%- endif -%}
               {%- endif -%}
@@ -1217,8 +1562,8 @@ rest:
                             + sensor_data.battery_storage|default(0.0)|float(0.0)
                             - ( sensor_data.energy_generated
                                   if sensor_data.energy_generated|default(0.0)|float(0.0) > 0.0
-                                    else 0.0
-                                  )|float(0.0)
+                                  else 0.0
+                              )|float(0.0)
                             ) * 12.0 / 1000
                           )|float(0.0)|round(2) 
                     -%}
@@ -1344,7 +1689,7 @@ rest:
       -}}&last_six=true
     headers:
       Authorization: >
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 0
     # REST SENSORS FOR sa_live_site_data...
     sensor:
@@ -1517,7 +1862,7 @@ rest:
       -}}
     headers:
       Authorization: >-
-        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token','token') -}}
+        {{- 'Bearer ' ~ state_attr('sensor.sa_auth_token_cached','token') -}}
     scan_interval: 0
     # REST SENSORS FOR sa_data_by_hour_... sensor (just one).
     sensor:
@@ -1536,11 +1881,13 @@ rest:
           {%- endif -%}
         availability: >-
           {{- value_json is defined and value_json.data is defined
-              and ( value_json.data|map(attribute='energy_expected')|select('is_number')|list|length ) > 0 -}}
+              and ( value_json.data|selectattr('energy_expected','defined')|
+                map(attribute='energy_expected')|select('is_number')|list|length) > 0 -}}
 
       # Total Energy Generated Expected
       #
       # Return values: numeric if available and positive, else 0.0 if negative, else none.
+      # Resets to zero on first update after midnight.
       #
       - name: sa_data_by_hour_generated_expected
         unique_id: sa_data_by_hour_generated_expected
@@ -1560,12 +1907,1046 @@ rest:
         availability: >-
           {{- value_json is defined and value_json.data is defined
               and ( value_json.data|selectattr('energy_expected','defined')|
-                map(attribute='energy_expected')|select('is_number')|list|length ) > 0 -}}
+                map(attribute='energy_expected')|select('is_number')|list|length) > 0 -}}
 
 template:
+
+  #
+  # Cached 5 minute Solar Analytics data timestamp and retry tracking
+  #
+  # Preserves the last valid 5 minute timestamp during temporary REST/API failures
+  # or delayed Solar Analytics data publication.
+  #
+  # Uses timestamp_next_expected as a breadcrumb:
+  # - valid raw timestamp sets timestamp_next_expected = raw + 5 minutes
+  # - scheduled poll checks whether raw timestamp has reached timestamp_next_expected
+  # - if not, update_failed becomes true and retry timer starts
+  #
+  # attributes:
+  #   token - last valid Solar Analytics bearer token.
+  #   expires - token expiry value from the most recent valid token refresh.
+  #
+  #   refresh_failed - true when the raw token refresh is unavailable or invalid.
+  #   refresh_failed_reason - most recent token refresh failure cause:
+  #     unavailable, invalid_token, unknown or none.
+  #
+  #   refresh_failed_last_timestamp - timestamp when the most recent token
+  #     refresh failure was detected.
+  #   refresh_failed_last_retry_count - retry count used in the most recent
+  #     token refresh failure cycle.
+  #   refresh_failed_restored_timestamp - timestamp when token refresh recovered.
+  #   refresh_failed_duration_mins - duration of the most recent token refresh
+  #     failure.
+  #
+  #   refresh_failed_count - token refresh failure event count.
+  #
   - trigger:
+      - platform: homeassistant
+        event: start
+      - platform: state
+        entity_id: sensor.sa_auth_token
+      - platform: state
+        entity_id: timer.sa_token_retry_timer
+        to: idle
+      - platform: time_pattern
+        minutes: "/1"
+    sensor:
+      - name: sa_auth_token_cached
+        unique_id: sa_auth_token_cached
+        state: >-
+          {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+          {%- if token is string and token|length > 20 -%}
+            {{- states('sensor.sa_auth_token') -}}
+          {%- else -%}
+            {{- this.state if this.state is defined else 0 -}}
+          {%- endif -%}
+        attributes:
+          token: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- if token is string and token|length > 20 -%}
+              {{- token -}}
+            {%- else -%}
+              {{- this.attributes.token
+                    if this.attributes is defined and this.attributes.token is defined
+                    else '' -}}
+            {%- endif -%}
+          expires: >-
+            {%- set expires = state_attr('sensor.sa_auth_token','expires') -%}
+            {%- if expires is not none -%}
+              {{- expires -}}
+            {%- else -%}
+              {{- this.attributes.expires
+                    if this.attributes is defined and this.attributes.expires is defined
+                    else '' -}}
+            {%- endif -%}
+          refresh_failed: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set initialized = this.state is defined
+                  and this.state|int(0) > 0 -%}
+            {%- if raw_valid -%}
+              false
+            {%- elif initialized and trig_entity == 'sensor.sa_auth_token' -%}
+              true
+            {%- elif initialized
+                  and trig_entity == 'timer.sa_token_retry_timer' -%}
+              true
+            {%- else -%}
+              {{- this.attributes.refresh_failed|default(false) -}}
+            {%- endif -%}
+          refresh_failed_reason: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- if raw_valid -%}
+              valid_token
+            {%- elif raw_state in ['unknown','unavailable','none',''] -%}
+              raw_token_unavailable
+            {%- elif trig_entity != '' -%}
+              {{- trig_entity -}}
+            {%- else -%}
+              unknown
+            {%- endif -%}
+          refresh_failed_last_timestamp: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set initialized = this.state is defined
+                  and this.state|int(0) > 0 -%}
+            {%- set was_failed = this.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set old = this.attributes.refresh_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.refresh_failed_last_timestamp is defined
+                  else '' -%}
+            {%- if initialized and not raw_valid
+                  and trig_entity == 'sensor.sa_auth_token' -%}
+              {{- now().strftime('%Y-%m-%d %H:%M:%S') -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          refresh_failed_last_retry_count: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set initialized = this.state is defined
+                  and this.state|int(0) > 0 -%}
+            {%- set was_failed = this.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set old =
+                  this.attributes.refresh_failed_last_retry_count|int(0) -%}
+            {#- New token refresh failure starts: reset retry count -#}
+            {%- if initialized and not raw_valid
+                  and trig_entity == 'sensor.sa_auth_token' -%}
+              0
+            {#- Count retry timer expiries while raw token remains invalid -#}
+            {%- elif initialized and not raw_valid and was_failed
+                  and trig_entity == 'timer.sa_token_retry_timer'
+                  and trig_to == 'idle' -%}
+              {{- old + 1 -}}
+            {#- Hold last retry count after recovery -#}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          refresh_failed_restored_timestamp: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set was_failed = this.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set old = this.attributes.refresh_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.refresh_failed_restored_timestamp is defined
+                  else '' -%}
+            {#- Clear restored timestamp at start of a new failure -#}
+            {%- if not raw_valid and trig_entity == 'sensor.sa_auth_token'
+                  and not was_failed -%}
+              {{- '' -}}
+            {#- Record recovery when the raw token becomes valid again -#}
+            {%- elif raw_valid
+                  and was_failed
+                  and trig_entity == 'sensor.sa_auth_token' -%}
+              {{- now().strftime('%Y-%m-%d %H:%M:%S') -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          refresh_failed_duration_mins: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set failed_at = this.attributes.refresh_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.refresh_failed_last_timestamp is defined
+                  else '' -%}
+            {%- set restored_at = this.attributes.refresh_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.refresh_failed_restored_timestamp is defined
+                  else '' -%}
+            {%- set failed = this.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- if failed_at == '' -%}
+              0
+            {%- elif failed and not raw_valid -%}
+              {{- ((as_timestamp(now()) 
+                    - as_timestamp(failed_at)) / 60)|round(1) -}}
+            {%- elif restored_at != '' -%}
+              {{- ((as_timestamp(restored_at) 
+                    - as_timestamp(failed_at)) / 60)|round(1) -}}
+            {%- else -%}
+              0
+            {%- endif -%}
+          refresh_failed_count: >-
+            {%- set token = state_attr('sensor.sa_auth_token','token') -%}
+            {%- set raw_state = states('sensor.sa_auth_token') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set raw_valid = token is string and token|length > 20
+                  and raw_state not in ['unknown','unavailable','none',''] -%}
+            {%- set initialized = this.state is defined
+                  and this.state|int(0) > 0 -%}
+            {%- set was_failed = this.attributes.refresh_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set old = this.attributes.refresh_failed_count|int(0) -%}
+            {%- if initialized and not raw_valid
+                  and trig_entity == 'sensor.sa_auth_token' -%}
+              {{- old + 1 -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+        availability: >-
+          true
+
+  #
+  # Cached 5 minute Solar Analytics data timestamp and retry tracking
+  #
+  # Preserves last valid 5 minute timestamp during temporary REST/API failures.
+  # Allows derived sensors to hold stable values while retry attempts occur.
+  # Works with sa_data_by_5min_trigger and sa_data_by_5min_trigger_retry.
+  # Retries failed 5 minute data refreshes once per minute up to 3x.
+  # New 3x retry cycle starts after each scheduled 5 minute poll attempt.
+  #
+  # attributes:
+  #   update_failed - persistent refresh failure confirmed when true.
+  #     True when:
+  #     - raw timestamp remains unavailable after retry attempts, or
+  #     - latest timestamp becomes stale (>= 6 minutes old).
+  #   update_failed_reason - most recent failure cause:
+  #     stale, unavailable or none (on start-up).
+  #
+  #   update_failed_cycle_retry_count - retry count for the active failure cycle.
+  #
+  #   update_failed_last_timestamp - timestamp associated with the most recent
+  #     failed update.
+  #   update_failed_last_retry_count - retry count used in the most recent
+  #     failure cycle.
+  #   update_failed_retry_recovered - true when the failed interval was
+  #     recovered by retry; false when lost or superseded by a later timestamp.
+  #   update_failed_restored_timestamp - first valid timestamp received after
+  #     recovery.
+  #
+  #   update_failed_gap_count - missing 5-minute intervals in the last outage.
+  #   update_failed_duration_mins - timestamp span between failure and recovery.
+  #
+  #   previous_timestamp - previous valid timestamp.
+  #   last_timestamp_gap_mins - latest timestamp interval in minutes
+  #     (normally 5 mins).
+  #
+  #   timestamp_gap_detected - latest timestamp continuity gap detected.
+  #   timestamp_gap_count - timestamp gap event count.
+  #   timestamp_gap_last_mins - size of the most recent timestamp gap.
+  #   timestamp_gap_last_timestamp - timestamp associated with the most recent
+  #     gap event.
+  #   timestamp_gap_max_mins - largest timestamp gap observed.
+  #
+  - trigger:
+      - platform: homeassistant
+        event: start
       - platform: state
         entity_id: sensor.sa_data_by_5min_time_stamp
+      - platform: state
+        entity_id: timer.sa_data_by_5min_retry_timer
+        to: idle
+      - platform: state
+        entity_id: input_datetime.sa_data_by_5min_last_poll_attempt
+    sensor:
+      - name: sa_data_by_5min_time_stamp_cached
+        unique_id: sa_data_by_5min_time_stamp_cached
+        state: >-
+          {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+          {%- if ts not in ['unknown','unavailable','none',''] -%}
+            {{- ts -}}
+          {%- else -%}
+            {{- this.state if this.state is defined else 'none' -}}
+          {%- endif -%}
+        attributes:
+          update_failed: >-
+            {#- Stale timestamp detection.
+                Solar Analytics 5-minute data is typically published several minutes
+                after the timestamp itself, so comparing against "now()" requires a
+                tolerance. A 6-minute threshold:
+                  - ignores normal publication lag,
+                  - detects the first missed 5-minute update,
+                  - allows the retry timer to recover transient delays before they
+                    become prolonged outages. -#}
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts))/60) >= 6 -%}
+            {%- set was_failed = this.attributes.update_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- if stale -%}
+              true
+            {%- elif ts not in ['unknown','unavailable','none',''] -%}
+              false
+            {# Keep outage active if raw data is still unavailable #}
+            {%- elif was_failed -%}
+              true
+            {%- elif trig_entity == 'timer.sa_data_by_5min_retry_timer' -%}
+              true
+            {%- elif trigger is not defined -%}
+              {{ this.attributes.update_failed|default(false) }}
+            {%- else -%}
+              false
+            {%- endif -%}
+          update_failed_reason: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set old_value = this.attributes.update_failed_reason
+                if this.attributes is defined
+                  and this.attributes.update_failed_reason is defined
+                else 'none' -%}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {%- if ts in ['unknown','unavailable','none'] -%}
+              unavailable
+            {%- elif stale -%}
+              stale
+            {%- elif this.attributes is defined
+                  and this.attributes.update_failed|default(false) -%}
+              {{- old_value -}}
+            {%- else -%}
+              {{- old_value -}}
+            {%- endif -%}
+          update_failed_cycle_retry_count: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set old_count = this.attributes.update_failed_cycle_retry_count|int(0)
+                  if this.attributes is defined
+                    and this.attributes.update_failed_cycle_retry_count is defined
+                  else 0 -%}
+            {%- set was_failed = this.attributes.update_failed|default(false)
+                  in [true,'true','True'] -%}
+            {#- Stale timestamp detection -#}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {%- set failed_now = ts in ['unknown','unavailable','none',''] or stale -%}
+            {#- First failed scheduled poll in a new outage is cycle 1. -#}
+            {%- if trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and failed_now
+                  and not was_failed -%}
+              1
+            {#- Subsequent failed scheduled polls during the same outage increment cycles. -#}
+            {%- elif trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and failed_now
+                  and was_failed -%}
+              {{- old_count + 1 -}}
+            {#- Preserve the final cycle count after recovery or during normal operation. -#}
+            {%- else -%}
+              {{- old_count -}}
+            {%- endif -%}
+          update_failed_last_timestamp: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                if this.attributes is defined
+                  and this.attributes.previous_timestamp is defined
+                else '' -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                if trigger is defined
+                  and trigger.to_state is defined
+                  and trigger.to_state is not none
+                else '' -%}
+            {%- set failed = this.attributes.update_failed|default(false)
+                in [true,'true','True'] -%}
+            {%- set old_value = this.attributes.update_failed_last_timestamp
+                if this.attributes is defined
+                  and this.attributes.update_failed_last_timestamp is defined
+                else '' -%}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {# New stale outage - latch once only #}
+            {%- if not failed and trig_entity ==
+                      'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and stale -%}
+              {{- ts -}}
+            {# New unavailable outage - latch once only #}
+            {%- elif not failed
+                    and trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                    and trig_to == 'idle'
+                    and ts in ['unknown','unavailable','none',''] -%}
+              {{- previous -}}
+            {%- else -%}
+              {{- old_value -}}
+            {%- endif -%}
+          update_failed_last_retry_count: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {%- set old_count = this.attributes.update_failed_last_retry_count
+                  if this.attributes is defined
+                    and this.attributes.update_failed_last_retry_count is defined
+                else 0 -%}
+            {#- Stale timestamp detection -#}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {#- A scheduled 5-minute poll attempt occurred while failure continues.
+                Reset retry count for a new unavailable or stale cycle. -#}
+            {%- if trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and (ts in ['unknown','unavailable','none',''] or stale) -%}
+              0
+            {#- Count retry timer expiries while failure continues. -#}
+            {%- elif trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle'
+                  and (ts in ['unknown','unavailable','none',''] or stale) -%}
+              {{- old_count|int(0) + 1 -}}
+            {%- else -%}
+              {{- old_count -}}
+            {%- endif -%}
+          update_failed_retry_recovered: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set failed_ts = this.attributes.update_failed_last_timestamp
+                if this.attributes is defined
+                  and this.attributes.update_failed_last_timestamp is defined
+                else '' -%}
+            {%- set old_value = this.attributes.update_failed_retry_recovered
+                  if this.attributes is defined
+                  and this.attributes.update_failed_retry_recovered is defined
+                  else false -%}
+            {%- set retry_count = this.attributes.update_failed_last_retry_count|int(0) -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined
+                  and trigger.to_state is defined and trigger.to_state is not none
+                  else '' -%}
+            {#- Stale timestamp detection -#}
+            {%- set stale =
+                  ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {#- New stale failed cycle detected. Clear recovered status until outcome known. -#}
+            {%- if trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and stale -%}
+              false
+            {#- New unavailable failed cycle detected. Clear recovered status until outcome known. -#}
+            {%- elif trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle'
+                  and ts in ['unknown','unavailable','none',''] -%}
+              false
+            {#- Recovery detected.
+                True only when recovery occurs after one or more retry attempts
+                and the recovered timestamp has reached or exceeded the expected
+                next 5-minute timestamp following the failed timestamp. -#}
+            {%- elif trig_entity == 'sensor.sa_data_by_5min_time_stamp'
+                  and ts not in ['unknown','unavailable','none','']
+                  and failed_ts != ''
+                  and retry_count > 0
+                  and not stale -%}
+              {%- set expected_ts = (as_timestamp(failed_ts) + 300)|round(0)|int -%}
+              {%- set recovered_ts = as_timestamp(ts)|round(0)|int -%}
+              {{- recovered_ts >= expected_ts -}}
+            {%- else -%}
+              {{- old_value -}}
+            {%- endif -%}
+          update_failed_restored_timestamp: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {%- set failed_ts = this.attributes.update_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_last_timestamp is defined
+                  else '' -%}
+            {%- set restored_ts = this.attributes.update_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_restored_timestamp is defined
+                  else '' -%}
+            {#- Stale timestamp detection -#}
+            {%- set stale = ts not in ['unknown','unavailable','none','']
+                  and ((as_timestamp(now()) - as_timestamp(ts)) / 60) >= 6 -%}
+            {#- New retry-confirmed failure: clear restored data timestamp -#}
+            {#- New failed cycle: clear restored data timestamp. -#}
+            {%- if trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
+                  and stale -%}
+              {{- '' -}}
+            {%- elif trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle'
+                  and ts in ['unknown','unavailable','none',''] -%}
+              {{- '' -}}
+            {#- Recovery after retry-confirmed failure: record restored data timestamp once -#}
+            {%- elif trig_entity == 'sensor.sa_data_by_5min_time_stamp'
+                    and ts not in ['unknown','unavailable','none','']
+                    and failed_ts != '' and restored_ts == '' -%}
+              {{- ts -}}
+            {#- Otherwise preserve previous restored data timestamp -#}
+            {%- else -%}
+              {{- restored_ts -}}
+            {%- endif -%}
+          update_failed_gap_count: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set failed_ts = this.attributes.update_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_last_timestamp is defined
+                  else '' -%}
+            {%- set restored_ts = this.attributes.update_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_restored_timestamp is defined
+                  else '' -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {#- Active retry-confirmed failure: reset current failed-gap count -#}
+            {%- if trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle' and ts in ['unknown','unavailable','none',''] -%}
+              0
+            {#- Completed failure: derive missed intervals from frozen data timestamps -#}
+            {%- elif failed_ts != '' and restored_ts != ''
+                  and restored_ts != failed_ts
+                  and as_timestamp(restored_ts) >= as_timestamp(failed_ts) -%}
+              {%- set gap_mins = ((as_timestamp(restored_ts)
+                      - as_timestamp(failed_ts)) / 60)|round(0)|int(0) -%}
+              {{- [((gap_mins / 5)|int(0)) - 1, 0]|max -}}
+            {%- else -%}
+              0
+            {%- endif -%}
+          update_failed_duration_mins: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set failed_ts = this.attributes.update_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_last_timestamp is defined
+                  else '' -%}
+            {%- set restored_ts = this.attributes.update_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_restored_timestamp is defined
+                  else '' -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {#- Active retry-confirmed failure: reset current failed-gap duration -#}
+            {%- if trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle' 
+                  and ts in ['unknown','unavailable','none',''] -%}
+              0
+            {#- Completed failure: derive gap from frozen data timestamps -#}
+            {%- elif failed_ts != '' and restored_ts != ''
+                  and restored_ts != failed_ts
+                  and as_timestamp(restored_ts) >= as_timestamp(failed_ts) -%}
+              {{- ((as_timestamp(restored_ts)
+                    - as_timestamp(failed_ts)) / 60)|round(0)|int(0) -}}
+            {%- else -%}
+              0
+            {%- endif -%}
+          previous_timestamp: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- if ts not in ['unknown','unavailable','none',''] -%}
+              {{- ts -}}
+            {%- else -%}
+              {{- this.attributes.previous_timestamp
+                    if this.attributes is defined
+                      and this.attributes.previous_timestamp is defined
+                    else '' -}}
+            {%- endif -%}
+          last_timestamp_gap_mins: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                else '' -%}
+            {%- set old_gap = this.attributes.last_timestamp_gap_mins
+                if this.attributes is defined
+                  and this.attributes.last_timestamp_gap_mins is defined
+                else 5 -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {{- ((as_timestamp(current)
+                    - as_timestamp(previous)) / 60)|round(0)|int(0) -}}
+            {%- else -%}
+              {{- old_gap -}}
+            {%- endif -%}
+          timestamp_gap_detected: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                  else '' -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {%- set gap = ((as_timestamp(current) 
+                      - as_timestamp(previous)) / 60)|round(0)|int(0) -%}
+              {{- gap > 5 -}}
+            {%- else -%}
+              false
+            {%- endif -%}
+          timestamp_gap_count: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                  else '' -%}
+            {%- set old_count = this.attributes.timestamp_gap_count
+                  if this.attributes is defined
+                    and this.attributes.timestamp_gap_count is defined
+                  else 0 -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {%- set gap = ((as_timestamp(current) 
+                      - as_timestamp(previous)) / 60)|round(0)|int(0) -%}
+              {{- old_count|int(0) + 1 if gap > 5 else old_count|int(0) -}}
+            {%- else -%}
+              {{- old_count|int(0) -}}
+            {%- endif -%}
+          timestamp_gap_last_mins: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                  else '' -%}
+            {%- set old_last = this.attributes.timestamp_gap_last_mins
+                  if this.attributes is defined
+                    and this.attributes.timestamp_gap_last_mins is defined
+                  else 0 -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {%- set gap = ((as_timestamp(current) 
+                      - as_timestamp(previous)) / 60)|round(0)|int(0) -%}
+              {{- gap if gap > 5 else old_last|int(0) -}}
+            {%- else -%}
+              {{- old_last|int(0) -}}
+            {%- endif -%}
+          timestamp_gap_last_timestamp: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                  else '' -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {%- set gap = ((as_timestamp(current) - as_timestamp(previous)) / 60)
+                    |round(0)|int(0) -%}
+              {{- now().strftime('%Y-%m-%d %H:%M:%S') if gap > 5
+                    else this.attributes.timestamp_gap_last_timestamp|default('') -}}
+            {%- else -%}
+              {{- this.attributes.timestamp_gap_last_timestamp|default('') -}}
+            {%- endif -%}
+          timestamp_gap_max_mins: >-
+            {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set previous = this.attributes.previous_timestamp
+                  if this.attributes is defined
+                    and this.attributes.previous_timestamp is defined
+                  else '' -%}
+            {%- set old_max = this.attributes.timestamp_gap_max_mins
+                  if this.attributes is defined
+                    and this.attributes.timestamp_gap_max_mins is defined
+                  else 0 -%}
+            {%- if current not in ['unknown','unavailable','none','']
+                  and previous != '' and current != previous -%}
+              {%- set gap = ((as_timestamp(current) 
+                      - as_timestamp(previous)) / 60)|round(0)|int(0) -%}
+              {{- [gap, old_max|int(0)]|max -}}
+            {%- else -%}
+              {{- old_max|int(0) -}}
+            {%- endif -%}
+          update_failed_count: >-
+            {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
+            {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
+            {%- set trig_to = trigger.to_state.state
+                  if trigger is defined and trigger.to_state is defined
+                    and trigger.to_state is not none
+                  else '' -%}
+            {%- set old_count = this.attributes.update_failed_count|int(0) -%}
+            {%- set restored_ts = this.attributes.update_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_restored_timestamp is defined
+                  else '' -%}
+            {%- if trig_entity == 'timer.sa_data_by_5min_retry_timer'
+                  and trig_to == 'idle' and ts in ['unknown','unavailable','none','']
+                  and restored_ts != '' -%}
+              {{- old_count + 1 -}}
+            {%- else -%}
+              {{- old_count -}}
+            {%- endif -%}
+        availability: >-
+          true
+
+  #
+  # Expected live Solar Analytics timestamp and outage tracking
+  #
+  # Normally follows the raw live timestamp.
+  #
+  # After each scheduled live poll, if the raw timestamp remains unavailable or appears
+  # stale (repeat of previous), advances the previous expected timestamp by 1 minute.
+  #
+  # Intended to mask known top-of-hour live data publication gaps (a known SA API issue), 
+  # stale timestamp responses and short outages.
+  #
+  # attributes:
+  #   update_failed - true when the raw live timestamp is unavailable or has
+  #     failed to advance beyond the expected timestamp after a scheduled poll.
+  #   update_failed_reason - most recent failure cause:
+  #     stale, unavailable or none (on start-up).
+  #
+  #   update_failed_last_timestamp - timestamp in use when the most recent
+  #     failure condition was first detected.
+  #   update_failed_restored_timestamp - first valid raw live timestamp
+  #     received after recovery.
+  #   update_failed_count - count of update_failed events detected.
+  #
+  #   timestamp_next_expected - next expected live timestamp breadcrumb.
+  #     Set to raw timestamp + 60 seconds after valid raw updates, or
+  #     advanced by 60 seconds after each synthetic timestamp.
+  #
+  #   timestamp_stale - true when the raw live timestamp is valid but has
+  #     failed to advance to the expected timestamp after a scheduled poll.
+  #   timestamp_stale_last - most recent raw timestamp identified as stale.
+  #
+  #   synthetic_timestamp_count - count of synthetic timestamps generated to
+  #     maintain timestamp continuity during unavailable or stale conditions.
+  #
+  - trigger:
+      - platform: homeassistant
+        event: start
+      - platform: state
+        entity_id: sensor.sa_live_site_data_time_stamp
+      - platform: event
+        event_type: sa_live_site_data_poll_completed
+    sensor:
+      - name: sa_live_site_data_time_stamp_expected
+        unique_id: sa_live_site_data_time_stamp_expected
+        state: >-
+          {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+          {%- set next_expected = this.attributes.timestamp_next_expected
+                if this.attributes is defined
+                  and this.attributes.timestamp_next_expected is defined
+                else '' -%}
+          {%- set poll_completed = trigger is defined
+                and trigger.platform == 'event' -%}
+          {%- set raw_last_changed =
+                states.sensor.sa_live_site_data_time_stamp.last_changed
+                if states.sensor.sa_live_site_data_time_stamp is defined
+                else none -%}
+          {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                if raw_last_changed is not none
+                else 9999 -%}
+          {%- set raw_recent = raw_age <= 30 -%}
+          {%- set raw_valid =
+                ts not in ['unknown','unavailable','none',''] -%}
+          {%- set next_valid =
+                next_expected not in ['unknown','unavailable','none',''] -%}
+          {%- set raw_behind_next = raw_valid and next_valid
+                and as_timestamp(ts) < as_timestamp(next_expected) -%}
+          {%- set should_synth = poll_completed and next_valid
+                and (not raw_valid
+                  or (raw_behind_next and not raw_recent)) -%}
+          {#- Raw timestamp state change. Real data is authoritative. -#}
+          {%- if raw_valid and not poll_completed -%}
+            {{- ts -}}
+          {#- Poll completed but raw timestamp is unavailable or stale/not advancing. 
+              Follow breadcrumb. -#}
+          {%- elif should_synth -%}
+            {{- next_expected -}}
+          {#- Poll completed and raw is valid/recent. Do not predict the next 
+              minute. -#}
+          {%- elif poll_completed and raw_valid -%}
+            {{- this.state if this.state is defined else ts -}}
+          {#- Fallback. -#}
+          {%- else -%}
+            {{- this.state if this.state is defined else 'none' -}}
+          {%- endif -%}
+        attributes:
+          update_failed: >-
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set raw_last_changed =
+                  states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid = 
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {{- not raw_valid 
+                or (raw_valid and next_valid and not raw_recent
+                  and as_timestamp(ts) < as_timestamp(next_expected)) -}}
+          update_failed_reason: >-
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set old_value = this.attributes.update_failed_reason
+                if this.attributes is defined
+                  and this.attributes.update_failed_reason is defined
+                else 'none' -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                if this.attributes is defined
+                  and this.attributes.timestamp_next_expected is defined
+                else '' -%}
+            {%- set raw_last_changed =
+                  states.sensor.sa_live_site_data_time_stamp.last_changed
+                if states.sensor.sa_live_site_data_time_stamp is defined
+                else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                if raw_last_changed is not none
+                else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- if not raw_valid -%}
+              unavailable
+            {%- elif next_valid and not raw_recent
+                  and as_timestamp(ts) < as_timestamp(next_expected) -%}
+              stale
+            {%- else -%}
+              {{- old_value -}}
+            {%- endif -%}
+          update_failed_last_timestamp: >-
+            {%- set old = this.attributes.update_failed_last_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_last_timestamp is defined
+                  else '' -%}
+            {%- set failed = this.attributes.update_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set raw_last_changed = 
+                  states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- set failed_now = not raw_valid
+                  or (raw_valid and next_valid and not raw_recent 
+                    and as_timestamp(ts) < as_timestamp(next_expected)) -%}
+            {%- if failed_now and not failed -%}
+              {{- this.state if this.state is defined else '' -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          update_failed_restored_timestamp: >-
+            {%- set old = this.attributes.update_failed_restored_timestamp
+                  if this.attributes is defined
+                    and this.attributes.update_failed_restored_timestamp is defined
+                  else '' -%}
+            {%- set failed = this.attributes.update_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- if raw_valid and failed -%}
+              {{- ts -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          update_failed_count: >-
+            {%- set old = this.attributes.update_failed_count|int(0) -%}
+            {%- set failed = this.attributes.update_failed|default(false)
+                  in [true,'true','True'] -%}
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set raw_last_changed =
+                  states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- set failed_now = not raw_valid
+                  or (raw_valid and next_valid and not raw_recent
+                    and as_timestamp(ts) < as_timestamp(next_expected)) -%}
+            {{- old + 1 if failed_now and not failed else old -}}
+          timestamp_next_expected: >-
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set old_next = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set poll_completed = trigger is defined
+                  and trigger.platform == 'event' -%}
+            {%- set raw_last_changed =
+                  states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  old_next not in ['unknown','unavailable','none',''] -%}
+            {%- set raw_behind_next = raw_valid and next_valid
+                  and as_timestamp(ts) < as_timestamp(old_next) -%}
+            {%- set should_synth = poll_completed and next_valid
+                  and (not raw_valid
+                    or (raw_behind_next and not raw_recent)) -%}
+            {#- Valid raw timestamp changed. Breadcrumb becomes raw + 60s. -#}
+            {%- if raw_valid and not poll_completed -%}
+              {{- (as_timestamp(ts) + 60)|timestamp_custom('%Y-%m-%d %H:%M:%S') -}}
+            {#- Synthetic timestamp used. Breadcrumb advances by another minute. -#}
+            {%- elif should_synth -%}
+              {{- (as_timestamp(old_next) + 60)|timestamp_custom('%Y-%m-%d %H:%M:%S') -}}
+            {#- Raw is valid and recent; keep breadcrumb. -#}
+            {%- elif raw_valid and next_valid -%}
+              {{- old_next -}}
+            {#- Initial fallback. -#}
+            {%- elif raw_valid -%}
+              {{- (as_timestamp(ts) + 60)|timestamp_custom('%Y-%m-%d %H:%M:%S') -}}
+            {%- else -%}
+              {{- old_next -}}
+            {%- endif -%}
+          timestamp_stale: >-
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set poll_completed = trigger is defined
+                  and trigger.platform == 'event' -%}
+            {%- set raw_last_changed =
+                    states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age =
+                    (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- if not poll_completed -%}
+              {{- this.attributes.timestamp_stale
+                if this.attributes is defined
+                  and this.attributes.timestamp_stale is defined
+                else false -}}
+            {%- elif not raw_valid -%}
+              true
+            {%- elif next_valid and not raw_recent
+                    and as_timestamp(ts) < as_timestamp(next_expected) -%}
+              true
+            {%- else -%}
+              false
+            {%- endif -%}
+          timestamp_stale_last: >-
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set old = this.attributes.timestamp_stale_last
+                  if this.attributes is defined
+                    and this.attributes.timestamp_stale_last is defined
+                  else '' -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set poll_completed = trigger is defined
+                  and trigger.platform == 'event' -%}
+            {%- set raw_last_changed =
+                    states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age = (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- if poll_completed and raw_valid and next_valid and not raw_recent
+                  and as_timestamp(ts) < as_timestamp(next_expected) -%}
+              {{- ts -}}
+            {%- elif poll_completed and not raw_valid and this.state is defined -%}
+              {{- this.state -}}
+            {%- else -%}
+              {{- old -}}
+            {%- endif -%}
+          synthetic_timestamp_count: >-
+            {%- set old = this.attributes.synthetic_timestamp_count|int(0) -%}
+            {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
+            {%- set next_expected = this.attributes.timestamp_next_expected
+                  if this.attributes is defined
+                    and this.attributes.timestamp_next_expected is defined
+                  else '' -%}
+            {%- set poll_completed = trigger is defined
+                  and trigger.platform == 'event' -%}
+            {%- set raw_last_changed =
+                    states.sensor.sa_live_site_data_time_stamp.last_changed
+                  if states.sensor.sa_live_site_data_time_stamp is defined
+                  else none -%}
+            {%- set raw_age =
+                    (as_timestamp(now()) - as_timestamp(raw_last_changed))
+                  if raw_last_changed is not none
+                  else 9999 -%}
+            {%- set raw_recent = raw_age <= 30 -%}
+            {%- set raw_valid =
+                  ts not in ['unknown','unavailable','none',''] -%}
+            {%- set next_valid =
+                  next_expected not in ['unknown','unavailable','none',''] -%}
+            {%- set raw_behind_next = raw_valid and next_valid
+                  and as_timestamp(ts) < as_timestamp(next_expected) -%}
+            {%- set should_synth = poll_completed and next_valid
+                  and (not raw_valid
+                    or (raw_behind_next and not raw_recent)) -%}
+            {{- old + 1 if should_synth else old -}}
+        availability: >-
+          true
+
+  - trigger:
+      - platform: state
+        entity_id: sensor.sa_data_by_5min_time_stamp_cached
         not_to:
           - "unknown"
           - "unavailable"
@@ -1605,7 +2986,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: "{{- states('sensor.sa_data_by_5min_energy_consumed') -}}"
 
       - name: "Total Energy Generated"
@@ -1634,7 +3015,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: "{{- states('sensor.sa_data_by_5min_energy_generated') -}}"
 
       # Solar Analytics derived total energy sensors
@@ -1664,7 +3045,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: "{{- states('sensor.sa_data_by_5min_imported') -}}"
 
       - name: "Total Energy Exported"
@@ -1693,7 +3074,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: "{{- states('sensor.sa_data_by_5min_exported') -}}"
 
   #
@@ -1725,7 +3106,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: "{{- states('sensor.sa_data_by_5min_energy_consumed_home') -}}"
 
       - name: "Total Energy Consumed Home Imported"
@@ -1754,7 +3135,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
       - name: "Total Battery Storage Energy Input"
         default_entity_id: sensor.sa_todays_battery_storage_in_total
@@ -1782,7 +3163,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: >-
               {{- -1.0 * states('sensor.sa_data_by_5min_battery_storage')|float(0.0) 
                     if states('sensor.sa_data_by_5min_battery_storage')|default(0.0)|float(0.0) < 0.0 
@@ -1814,7 +3195,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last5min: >-
               {{- states('sensor.sa_data_by_5min_battery_storage')|float(0.0) 
                     if states('sensor.sa_data_by_5min_battery_storage')|default(0.0)|float(0.0) > 0.0 
@@ -1846,7 +3227,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
         #
         # Battery Storage Energy In Generated and Imported
@@ -1881,7 +3262,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           percentage_of_total: >
             {%- set generated = states('sensor.sa_data_by_5min_battery_storage_in_generated_total')|float(0.0) -%}
             {%- set total  = states('sensor.sa_data_by_5min_battery_storage_in_total')|float(0.0) -%}
@@ -1917,7 +3298,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           percentage_of_total: >
             {%- set imported = states('sensor.sa_data_by_5min_battery_storage_in_imported_total')|float(0.0) -%}
             {%- set total = states('sensor.sa_data_by_5min_battery_storage_in_total')|float(0.0) -%}
@@ -1959,7 +3340,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           percentage_of_total: >-
             {%- set consumed = states('sensor.sa_data_by_5min_battery_storage_out_consumed_total')|float(0.0) -%}
             {%- set total  = states('sensor.sa_data_by_5min_battery_storage_out_total')|float(0.0) -%}
@@ -1995,7 +3376,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           percentage_of_total: >
             {%- set exported = states('sensor.sa_todays_battery_storage_out_exported')|float(0.0) -%}
             {%- set total  = states('sensor.sa_data_by_5min_battery_storage_out_total')|float(0.0) -%}
@@ -2018,7 +3399,7 @@ template:
         state: >-
             {{- state_attr( "sensor.sa_todays_battery_storage_in_generated", "percentage_of_total" )|float(none) -}} 
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
       # The percentage of Battery Storage energy that was consumed
       # - i.e. not exported.
@@ -2030,7 +3411,7 @@ template:
         state: >-
           {{- state_attr( "sensor.sa_todays_battery_storage_out_consumed", "percentage_of_total" )|float(none) -}} 
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
   #
   ### BATTERY STORAGE - END <<<<<<<<<<
   #
@@ -2066,7 +3447,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
       #
       # Calculation logic considerate of total energy generated at start of the day
@@ -2097,7 +3478,7 @@ template:
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
       # Percentage of consumed energy that has been generated.
       #
@@ -2123,7 +3504,7 @@ template:
             0.0
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
       #
       # Solar Analytics Energy history sensor for graphing each channel (e.g. in Apex Charts).
@@ -2140,7 +3521,7 @@ template:
       - name: "Total Energy History"
         default_entity_id: sensor.sa_todays_energy_history
         unique_id: sa_todays_energy_history
-        state: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        state: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         icon: mdi:sun-clock
         attributes:
           times: >-
@@ -2164,7 +3545,6 @@ template:
             {{- states('sensor.sa_data_by_5min_history_energy_generated') -}}
           energy_imported_exported: >
             {{- states('sensor.sa_data_by_5min_history_imported_exported') -}}
-
   #
   ### BATTERY STORAGE - START >>>>>>>>>>
   #
@@ -2177,13 +3557,10 @@ template:
   #
 
   - trigger:
-      - platform: state
-        entity_id: sensor.sa_data_by_hour_time_stamp
-        not_to:
-          - "unknown"
-          - "unavailable"
-          - "none"
-        for: "00:00:02"
+    - platform: state
+      entity_id:
+        - sensor.sa_data_by_hour_time_stamp
+        - sensor.sa_data_by_hour_generated_expected
 
     sensor:
       # Expected solar generation to current hour - updated hourly
@@ -2201,32 +3578,49 @@ template:
       - name: "Total Energy Generated Expected"
         default_entity_id: sensor.sa_todays_energy_generated_expected_total
         unique_id: sa_todays_energy_generated_expected_total
-        unit_of_measurement: "Wh"
+        unit_of_measurement: "kWh"
         icon: mdi:solar-power
         device_class: "energy"
         state_class: "total"
         state: >-
           {%- set new = states('sensor.sa_data_by_hour_generated_expected')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new is number -%}
-            {%- set new_val = new|float(0.0) -%}
-            {#- Clamp near-zero noise -#}
-            {%- if new_val < 0.0001 -%}
-              0.0
-            {%- elif (new_val - old)|abs < 0.01 -%}
-              {{- old -}}
-            {%- else -%}
-              {{- new_val -}}
-            {%- endif -%}
+          {%- if now().hour == 0 -%}
+            0.0
+          {%- elif new is number -%}
+            {{- new|float(0.0) / 1000 -}}
           {%- else -%}
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_hour_time_stamp') -}}"
+          time_stamp: >-
+            {%- set ts = states('sensor.sa_data_by_hour_time_stamp') -%}
+            {%- if ts not in ['unknown','unavailable','none',''] -%}
+              {{- ts -}}
+            {%- else -%}
+              {{- states.sensor.sa_data_by_hour_time_stamp.last_changed
+                  .strftime('%Y-%m-%d %H:%M:%S') -}}
+            {%- endif -%}
+          update_failed: >-
+            {%- set new = states('sensor.sa_data_by_hour_generated_expected')|float(none) -%}
+            {%- if new is not number -%}
+              true
+            {%- else -%}
+              false
+            {%- endif -%}
+          timestamp_failed: >-
+            {%- set ts = states('sensor.sa_data_by_hour_time_stamp') -%}
+            {%- if ts in ['unknown','unavailable','none',''] -%}
+              true
+            {%- else -%}
+              false
+            {%- endif -%}
+        availability: >-
+          true
 
   - trigger:
       - platform: state
-        entity_id: sensor.sa_live_site_data_time_stamp
+        entity_id: sensor.sa_live_site_data_time_stamp_expected
         not_to:
           - "unknown"
           - "unavailable"
@@ -2248,15 +3642,22 @@ template:
         state_class: "measurement"
         state: >-
           {%- set new = states('sensor.sa_live_site_data_consumed')|float(none) -%}
-          {%- set old = this.state|float(0.0) -%}
-          {%- if new is number -%}
+          {%- set old = this.state|float(none) -%}
+          {%- if new is number and old is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+          time_stamp: >-
+            {{- states('sensor.sa_live_site_data_time_stamp_expected') -}}
+          update_failed: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed') -}}
+          update_failed_last_timestamp: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed_last_timestamp') -}}
 
       - name: "Power Generation"
         default_entity_id: sensor.sa_generation_power
@@ -2267,15 +3668,22 @@ template:
         state_class: "measurement"
         state: >-
           {%- set new = states('sensor.sa_live_site_data_generated')|float(none) -%}
-          {%- set old = this.state|float(0.0) -%}
-          {%- if new is number -%}
+          {%- set old = this.state|float(none) -%}
+          {%- if new is number and old is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+          time_stamp: >-
+            {{- states('sensor.sa_live_site_data_time_stamp_expected') -}}
+          update_failed: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed') -}}
+          update_failed_last_timestamp: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed_last_timestamp') -}}
 
       - name: "Power Import Export"
         default_entity_id: sensor.sa_import_export_power
@@ -2286,15 +3694,22 @@ template:
         state_class: "measurement"
         state: >-
           {%- set new = states('sensor.sa_live_site_data_imported_exported')|float(none) -%}
-          {%- set old = this.state|float(0.0) -%}
-          {%- if new is number -%}
+          {%- set old = this.state|float(none) -%}
+          {%- if new is number and old is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+          time_stamp: >-
+            {{- states('sensor.sa_live_site_data_time_stamp_expected') -}}
+          update_failed: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed') -}}
+          update_failed_last_timestamp: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed_last_timestamp') -}}
   
   #
   ### BATTERY STORAGE - START >>>>>>>>>>
@@ -2309,14 +3724,21 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_battery')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number and old is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+          time_stamp: >-
+            {{- states('sensor.sa_live_site_data_time_stamp_expected') -}}
+          update_failed: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed') -}}
+          update_failed_last_timestamp: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed_last_timestamp') -}}
 
       - name: "Power Home Consumption"
         default_entity_id: sensor.sa_home_consumption_power
@@ -2328,35 +3750,51 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_consumed_home')|float(none) -%}
           {%- set old = this.state|float(0.0) -%}
-          {%- if new|is_number -%}
+          {%- if new is number and old is number -%}
             {%- set new_val = new|float(0.0) -%}
             {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
           {%- else -%}
-            {{- this.state|float(0.0) if this.state is defined else 0.0 -}}
+            {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_live_site_data_time_stamp') -}}"
+          time_stamp: >-
+            {{- states('sensor.sa_live_site_data_time_stamp_expected') -}}
+          update_failed: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed') -}}
+          update_failed_last_timestamp: >-
+            {{- state_attr('sensor.sa_live_site_data_time_stamp_expected',
+                  'update_failed_last_timestamp') -}}
   #
   ### BATTERY STORAGE - END <<<<<<<<<<
   #
 
   - sensor:
       # Solar Analytics status sensors
+      #
+      # 24-Jul-26 - added time_stamp.
+      #
       - name: "Dashboard Status"
         default_entity_id: sensor.sa_dashboard_status
         unique_id: sa_dashboard_status
         state: "{{- state_attr('sensor.sa_status', 'dashboard_status') -}}"
+        attributes:
+          time_stamp: "{{- states('sensor.sa_status') -}}"
 
       - name: "System Status"
         default_entity_id: sensor.sa_mer_status
         unique_id: sa_mer_status
         state: "{{- state_attr('sensor.sa_status', 'mer_status') -}}"
+        attributes:
+          time_stamp: "{{- states('sensor.sa_status') -}}"
 
       - name: "PV Performance"
         default_entity_id: sensor.sa_mer_percentage
         unique_id: sa_mer_percentage
         state: "{{- state_attr('sensor.sa_status', 'mer_percentage') -}}"
         unit_of_measurement: "%"
+        attributes:
+          time_stamp: "{{- states('sensor.sa_status') -}}"
 
       #
       ### DELETE FOR RELEASE CODE - START <<<<<<<<<<
@@ -2376,7 +3814,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           consumed_solar_total: "{{- states('sensor.sa_data_by_5min_consumed_solar_total') -}}"
           battery_storage_out_consumed_total: "{{- states('sensor.sa_data_by_5min_battery_storage_out_consumed_total') -}}"
           consumed_home_imported_total: "{{- states('sensor.sa_data_by_5min_energy_consumed_home_imported_total') -}}"
@@ -2410,7 +3848,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           consumed_solar_total: "{{- states('sensor.sa_data_by_5min_consumed_solar_total') -}}"
           battery_storage_in_generated_total: "{{- states('sensor.sa_data_by_5min_battery_storage_in_generated_total') -}}"
           exported_generated_total: "{{- states('sensor.sa_data_by_5min_exported_generated_total') -}}"
@@ -2446,7 +3884,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           sa_todays_battery_storage_out_exported: "{{- states('sensor.sa_todays_battery_storage_out_exported') -}}"
           sa_todays_energy_exported_generated: "{{- states('sensor.sa_todays_energy_exported_generated') -}}"
           sa_todays_energy_exported: "{{- states('sensor.sa_todays_energy_exported') -}}"
@@ -2476,7 +3914,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           sa_todays_battery_storage_in_imported: "{{- states('sensor.sa_todays_battery_storage_in_imported') -}}"
           sa_todays_energy_consumed_home_imported_total: "{{- states('sensor.sa_todays_energy_consumed_home_imported_total') -}}"
           sa_todays_energy_imported: "{{- states('sensor.sa_todays_energy_imported') -}}"
@@ -2506,7 +3944,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           sa_todays_battery_storage_in_generated: "{{- states('sensor.sa_todays_battery_storage_in_generated') -}}"
           sa_todays_battery_storage_in_imported: "{{- states('sensor.sa_todays_battery_storage_in_imported') -}}"
           sa_todays_battery_storage_in_total: "{{- states('sensor.sa_todays_battery_storage_in_total') -}}"
@@ -2536,7 +3974,7 @@ template:
             none
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           sa_todays_battery_storage_out_consumed: "{{- states('sensor.sa_todays_battery_storage_out_consumed') -}}"
           sa_todays_battery_storage_out_exported: "{{- states('sensor.sa_todays_battery_storage_out_exported') -}}"
           sa_todays_battery_storage_out_total: "{{- states('sensor.sa_todays_battery_storage_out_total') -}}"
@@ -2580,15 +4018,15 @@ template:
         state: >-
           {%- set import_raw = states('sensor.sa_todays_energy_imported_cost')|float(none) -%}
           {%- set export_raw = states('sensor.sa_todays_energy_exported_compensation')|float(none) -%}
-          {%- set old = this.state|float(0.0) -%}
+          {%- set old = this.state|float(none) -%}
           {%- if import_raw is number and export_raw is number -%}
             {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
-            {{- new_val if new_val != old else this.state|float(0.0) -}}
+            {{- new_val if new_val != old|float(0.0) else this.state|float(0.0) -}}
           {%- else -%}
             {{- old -}}
           {%- endif -%}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
   #
   # Todays Energy Import Rate
@@ -2613,7 +4051,7 @@ template:
         state: >-
           {%- set imported = states('sensor.sa_data_by_5min_imported_total')|float(0.0) -%}
           {%- set cost = states('sensor.sa_todays_energy_imported_cost')|float(0.0) -%}
-          {%- set old = this.state|float(0.0) -%}
+          {%- set old = this.state|float(none) -%}
           {%- if imported > 0 -%}
             {%- if imported > 100 -%}
               {{- (cost / imported * 1000.0)|float(0.0)|round(3) -}}
@@ -2625,7 +4063,7 @@ template:
           {%- endif -%}
         attributes:
           state_class: "measurement"
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         availability: >-
           {{- states('sensor.sa_data_by_5min_imported_total')|float(0.0) > 0 -}}
 
@@ -2652,7 +4090,7 @@ template:
         state: >-
           {%- set exported = states('sensor.sa_data_by_5min_exported_total')|float(0.0) -%}
           {%- set compensation = states('sensor.sa_todays_energy_exported_compensation')|float(0.0) -%}
-          {%- set old = this.state|float(0.0) -%}
+          {%- set old = this.state|float(none) -%}
           {%- if exported > 0 -%}
             {%- if exported > 100 -%}
               {{- (compensation / exported * 1000.0)|float(0.0)|round(3) -}}
@@ -2664,7 +4102,7 @@ template:
           {%- endif -%}
         attributes:
           state_class: "measurement"
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         availability: >-
           {{- states('sensor.sa_data_by_5min_exported_total')|float(0.0) > 0 -}}
 
