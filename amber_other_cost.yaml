@@ -1,5 +1,5 @@
-# -----------------------------------------------------------------------------  
-# >>> RELEASE 10 FINAL - <<< AMBER OTHER COST
+# -----------------------------------------------------------------------------
+# >>> RELEASE 11 FINAL - <<< AMBER OTHER COST
 #
 # Other devices integration for Home Assistant Energy Management. 
 # Requires <solar_analytics_advanced.yaml> to be installed or an alternative source
@@ -9,7 +9,7 @@
 #
 # Created: 29-Dec-25
 #
-# Last updated: 24-May-26
+# Last updated: 21-Jul-26
 #
 # Updates: 
 #   29-Dec-25 - initial version forked from amber_oven_stove_cost.yaml.
@@ -20,6 +20,7 @@
 #             - Added change-guard logic to suppress minor calculation jitter and unnecessary state updates
 #             - Standardised incremental and cumulative cost calculations for improved stability and accuracy
 #             - Ensured consistent handling of last5min energy attributes and Amber price inputs
+#   21-Jul-26 - Updated time stamp to sa_data_by_5min_time_stamp_cached.
 #
 # Calculate Other devices cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
@@ -89,6 +90,6 @@ template:
           {{- old -}}
         {%- endif -%}
       attributes:
-        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
 # -----------------------------------------------------------------------------

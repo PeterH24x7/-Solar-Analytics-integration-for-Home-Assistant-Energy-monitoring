@@ -1,5 +1,5 @@
-# ----------------------------------------------------------------------------- 
-# >>> RELEASE 10 FINAL - <<< AMBER HOT WATER COST
+# -----------------------------------------------------------------------------
+# >>> RELEASE 11 FINAL - <<< AMBER HOT WATER COST
 #
 # Hot Water integration for Home Assistant Energy Management. 
 # Requires <solar_analytics_advanced.yaml> to be installed or an alternative source
@@ -9,7 +9,7 @@
 #
 # Created: 20-Apr-2023
 #
-# Last updated: 24-May-26
+# Last updated: 21-Jul-26 as Release 11 - see update notes below.
 #
 # Updates: 
 #   18-May-23 - fixed meter resetting based on daily trigger at midnight.
@@ -23,6 +23,7 @@
 #             - Added change-guard logic to suppress minor calculation jitter and unnecessary state updates
 #             - Standardised incremental and cumulative cost calculations for improved stability and accuracy
 #             - Ensured consistent handling of last5min energy attributes and Amber price inputs
+#   24-Jul-26 - Updated time stamp to sa_data_by_5min_time_stamp_cached.
 #
 # Calculate Hot Water cost for both generated and imported energy, total net 
 # cost and average combined charging rate for the day.
@@ -78,7 +79,7 @@ template:
           {{- old -}}
         {%- endif -%}
       attributes:
-        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
     - name: "Hot Water Rate Average"
       default_entity_id: sensor.amber_todays_hot_water_rate_av
@@ -98,7 +99,7 @@ template:
           {{- old -}}
         {%- endif -%}
       attributes:
-        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+        time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
   - trigger:
       - platform: state
@@ -112,7 +113,7 @@ template:
           {%- set price = states('sensor.amber12ayrst_feed_in_price')|float(0.0) -%}
           {{- (price * hw_wh / 1000.0) if hw_wh > 0.0 else 0.0 -}}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last_price: "{{- states('sensor.amber12ayrst_feed_in_price')|float(0.0) -}}"
 
   - trigger:
@@ -127,7 +128,7 @@ template:
           {%- set price = states('sensor.amber12ayrst_general_price')|float(0.0) -%}
           {{- (price * hw_wh / 1000.0) if hw_wh > 0.0 else 0.0 -}}
         attributes:
-          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp') -}}"
+          time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
           last_price: "{{- states('sensor.amber12ayrst_general_price')|float(0.0) -}}"
 
   - trigger:
@@ -162,7 +163,7 @@ template:
           time_stamp: >-
             {{- state_attr('binary_sensor.amber_meter_reset', 'time_stamp')
                 if is_state('binary_sensor.amber_meter_reset', 'on')
-                else states('sensor.sa_data_by_5min_time_stamp') -}}
+                else states('sensor.sa_data_by_5min_time_stamp_cached') -}}
 
   - trigger:
       - platform: state
@@ -196,6 +197,6 @@ template:
           time_stamp: >-
             {{- state_attr('binary_sensor.amber_meter_reset', 'time_stamp')
                 if is_state('binary_sensor.amber_meter_reset', 'on')
-                else states('sensor.sa_data_by_5min_time_stamp') -}}
+                else states('sensor.sa_data_by_5min_time_stamp_cached') -}}
 
 # -----------------------------------------------------------------------------
