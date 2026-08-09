@@ -110,6 +110,11 @@
 #                   - Changed sa_status state to a refresh timestamp to guarantee detectable updates; 
 #                     mer_status/dashboard_status/mer_percentage remain unchanged via attributes and 
 #                     now include a time_stamp attribute.
+#                 - sa_data_by_5min_history_..._imported/generated (solar_analytics_advanced.yaml):
+#                   - Added imported and generated history sensors for major controllable loads 
+#                     including EV Charger, Air Conditioner, Hot Water and Stove.
+#                   - Enables consolidated imported/generated energy history attributes for advanced 
+#                     charting and dashboard reporting.
 #
 # This code is provided as-is and without any warrantee or guarantees.
 # Further public contributions and enhancements are welcomed.
@@ -1542,35 +1547,6 @@ rest:
   #
   ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
   #
-      - name: sa_data_by_5min_history_load_air_conditioner
-        unique_id: sa_data_by_5min_history_load_air_conditioner
-        value_template: >-
-          {%- if value_json is defined and value_json.data is defined -%}
-            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
-                {%- set ns.last_data = loop.index -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- for sensor_data in value_json.data -%}
-              {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
-                {%- if ('load_air_conditioner' in sensor_data and sensor_data.load_air_conditioner is number) -%}
-                  {%- set ns.current_value = ((sensor_data.load_air_conditioner|float)*12.0/1000)|float(0.0)|round(2) -%}
-                {%- else -%}
-                  {#- data must be bad (none) - default to repeat last value -#}
-                {%- endif -%}
-                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {{- ns.sensor_values -}}
-          {%- else -%}
-            {{- states('sensor.sa_data_by_5min_history_load_air_conditioner')|default([]) -}}
-          {%- endif -%}
-        availability: >-
-          {{- value_json is defined and value_json.data is defined
-              and ( value_json.data|selectattr('load_air_conditioner','defined')|
-                map(attribute='load_air_conditioner')|select('is_number')|list|length ) > 0 -}}
-
       - name: sa_data_by_5min_history_load_ev_charger
         unique_id: sa_data_by_5min_history_load_ev_charger
         value_template: >-
@@ -1599,6 +1575,35 @@ rest:
           {{- value_json is defined and value_json.data is defined
               and ( value_json.data|selectattr('load_ev_charger','defined')|
                 map(attribute='load_ev_charger')|select('is_number')|list|length ) > 0 -}}
+
+      - name: sa_data_by_5min_history_load_air_conditioner
+        unique_id: sa_data_by_5min_history_load_air_conditioner
+        value_template: >-
+          {%- if value_json is defined and value_json.data is defined -%}
+            {%- set ns = namespace( last_data=0, sensor_values=[], current_value=0.0 ) -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if ('energy_consumed' in sensor_data and sensor_data.energy_consumed is number) -%}
+                {%- set ns.last_data = loop.index -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- for sensor_data in value_json.data -%}
+              {%- if (loop.index > (ns.last_data - 28)) and (loop.index <= ns.last_data) -%}
+                {%- if ('load_air_conditioner' in sensor_data and sensor_data.load_air_conditioner is number) -%}
+                  {%- set ns.current_value = ((sensor_data.load_air_conditioner|float)*12.0/1000)|float(0.0)|round(2) -%}
+                {%- else -%}
+                  {#- data must be bad (none) - default to repeat last value -#}
+                {%- endif -%}
+                {%- set ns.sensor_values = ns.sensor_values + [ ns.current_value ] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.sensor_values -}}
+          {%- else -%}
+            {{- states('sensor.sa_data_by_5min_history_load_air_conditioner')|default([]) -}}
+          {%- endif -%}
+        availability: >-
+          {{- value_json is defined and value_json.data is defined
+              and ( value_json.data|selectattr('load_air_conditioner','defined')|
+                map(attribute='load_air_conditioner')|select('is_number')|list|length ) > 0 -}}
 
       - name: sa_data_by_5min_history_load_hot_water
         unique_id: sa_data_by_5min_history_load_hot_water
@@ -2011,8 +2016,10 @@ template:
                   and this.state|int(0) > 0 -%}
             {%- set was_failed = this.attributes.refresh_failed|default(false)
                   in [true,'true','True'] -%}
-            {%- set old =
-                  this.attributes.refresh_failed_last_retry_count|int(0) -%}
+            {%- set old = 
+                  this.attributes.get('refresh_failed_last_retry_count', 0)|int(0) 
+                  if this.attributes is defined 
+                  else 0 -%}
             {#- New token refresh failure starts: reset retry count -#}
             {%- if initialized and not raw_valid
                   and trig_entity == 'sensor.sa_auth_token' -%}
@@ -2086,7 +2093,9 @@ template:
                   and this.state|int(0) > 0 -%}
             {%- set was_failed = this.attributes.refresh_failed|default(false)
                   in [true,'true','True'] -%}
-            {%- set old = this.attributes.refresh_failed_count|int(0) -%}
+            {%- set old = this.attributes.get('refresh_failed_count', 0)|int(0)
+                  if this.attributes is defined 
+                  else 0 -%}
             {%- if initialized and not raw_valid
                   and trig_entity == 'sensor.sa_auth_token' -%}
               {{- old + 1 -}}
@@ -2209,7 +2218,7 @@ template:
           update_failed_cycle_retry_count: >-
             {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
             {%- set trig_entity = trigger.entity_id if trigger is defined else '' -%}
-            {%- set old_count = this.attributes.update_failed_cycle_retry_count|int(0)
+            {%- set old = this.attributes.update_failed_cycle_retry_count|int(0)
                   if this.attributes is defined
                     and this.attributes.update_failed_cycle_retry_count is defined
                   else 0 -%}
@@ -2228,10 +2237,10 @@ template:
             {%- elif trig_entity == 'input_datetime.sa_data_by_5min_last_poll_attempt'
                   and failed_now
                   and was_failed -%}
-              {{- old_count + 1 -}}
+              {{- old + 1 -}}
             {#- Preserve the final cycle count after recovery or during normal operation. -#}
             {%- else -%}
-              {{- old_count -}}
+              {{- old -}}
             {%- endif -%}
           update_failed_last_timestamp: >-
             {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
@@ -2274,7 +2283,7 @@ template:
                 if trigger is defined and trigger.to_state is defined
                   and trigger.to_state is not none
                 else '' -%}
-            {%- set old_count = this.attributes.update_failed_last_retry_count
+            {%- set old = this.attributes.update_failed_last_retry_count
                 if this.attributes is defined
                   and this.attributes.update_failed_last_retry_count is defined
                 else 0 -%}
@@ -2290,9 +2299,9 @@ template:
             {%- elif trig_entity == 'timer.sa_data_by_5min_retry_timer'
                   and trig_to == 'idle'
                   and (ts in ['unknown','unavailable','none',''] or stale) -%}
-              {{- old_count|int(0) + 1 -}}
+              {{- old|int(0) + 1 -}}
             {%- else -%}
-              {{- old_count -}}
+              {{- old -}}
             {%- endif -%}
           update_failed_retry_recovered: >-
             {%- set ts = states('sensor.sa_data_by_5min_time_stamp') -%}
@@ -2479,7 +2488,7 @@ template:
                   if this.attributes is defined
                     and this.attributes.previous_timestamp is defined
                   else '' -%}
-            {%- set old_count = this.attributes.timestamp_gap_count
+            {%- set old = this.attributes.timestamp_gap_count
                   if this.attributes is defined
                     and this.attributes.timestamp_gap_count is defined
                   else 0 -%}
@@ -2487,9 +2496,9 @@ template:
                   and previous != '' and current != previous -%}
               {%- set gap = ((as_timestamp(current) 
                       - as_timestamp(previous)) / 60)|round(0)|int(0) -%}
-              {{- old_count|int(0) + 1 if gap > 5 else old_count|int(0) -}}
+              {{- old|int(0) + 1 if gap > 5 else old|int(0) -}}
             {%- else -%}
-              {{- old_count|int(0) -}}
+              {{- old|int(0) -}}
             {%- endif -%}
           timestamp_gap_last_mins: >-
             {%- set current = states('sensor.sa_data_by_5min_time_stamp') -%}
@@ -2549,7 +2558,9 @@ template:
                   if trigger is defined and trigger.to_state is defined
                     and trigger.to_state is not none
                   else '' -%}
-            {%- set old_count = this.attributes.update_failed_count|int(0) -%}
+            {%- set old = this.attributes.get('update_failed_count', 0)|int(0)
+                  if this.attributes is defined 
+                  else 0 -%}
             {%- set restored_ts = this.attributes.update_failed_restored_timestamp
                   if this.attributes is defined
                     and this.attributes.update_failed_restored_timestamp is defined
@@ -2557,9 +2568,9 @@ template:
             {%- if trig_entity == 'timer.sa_data_by_5min_retry_timer'
                   and trig_to == 'idle' and ts in ['unknown','unavailable','none','']
                   and restored_ts != '' -%}
-              {{- old_count + 1 -}}
+              {{- old + 1 -}}
             {%- else -%}
-              {{- old_count -}}
+              {{- old -}}
             {%- endif -%}
         availability: >-
           true
@@ -2748,7 +2759,9 @@ template:
               {{- old -}}
             {%- endif -%}
           update_failed_count: >-
-            {%- set old = this.attributes.update_failed_count|int(0) -%}
+            {%- set old = this.attributes.get('update_failed_count', 0)|int(0)
+                  if this.attributes is defined 
+                  else 0 -%}
             {%- set failed = this.attributes.update_failed|default(false)
                   in [true,'true','True'] -%}
             {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
@@ -2879,7 +2892,9 @@ template:
               {{- old -}}
             {%- endif -%}
           synthetic_timestamp_count: >-
-            {%- set old = this.attributes.synthetic_timestamp_count|int(0) -%}
+            {%- set old = this.attributes.get('synthetic_timestamp_count', 0)|int(0)
+                  if this.attributes is defined 
+                  else 0 -%}
             {%- set ts = states('sensor.sa_live_site_data_time_stamp') -%}
             {%- set next_expected = this.attributes.timestamp_next_expected
                   if this.attributes is defined
@@ -3474,10 +3489,10 @@ template:
   #
   ### DELETE FOR 3-PHASE SOLUTION - START >>>>>>>>>>
   #
-          energy_load_air_conditioner: >
-            {{- states('sensor.sa_data_by_5min_history_load_air_conditioner') -}}
           energy_load_ev_charger: >
             {{- states('sensor.sa_data_by_5min_history_load_ev_charger') -}}
+          energy_load_air_conditioner: >
+            {{- states('sensor.sa_data_by_5min_history_load_air_conditioner') -}}
           energy_load_hot_water: >
             {{- states('sensor.sa_data_by_5min_history_load_hot_water') -}}
           energy_load_stove: >
@@ -3493,6 +3508,7 @@ template:
         - sensor.sa_data_by_hour_generated_expected
 
     sensor:
+      #
       # Expected solar generation to current hour - updated hourly
       #
       # Importantly, the sensor is stabilised by clamping near-zero noise variations
