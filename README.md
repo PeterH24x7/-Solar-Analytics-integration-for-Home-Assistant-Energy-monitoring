@@ -1,9 +1,13 @@
 # Solar Analytics Integration for Home Assistant Energy Monitoring
 
-Last updated for Release 10 6-Jun-26. 
-Release 10 hardens all template sensors against loops, resets, startup conditions and 
-invalid data while preserving backward-compatible sensor naming and behaviour.
-See comments in the code and the detailed sensor notes for more information.
+Last updated for Release 11 12-Aug-26.
+Release 11 adds resilient token, 5min, live and hourly data recovery from outages,
+with retries, delayed publication and startup/reload protection. Includes recovery 
+diagnostics for retries, stale data and unavailability.
+Also adds imported and generated history sensors for major loads including EV 
+Charger, Air Conditioner, Hot Water and Stove (solar_analytics_advanced.yaml).
+See example - example-apex-chart-card-solar_analytics_adv-load-imp-gen.jpg.
+
 
 ================================================================ 
 
@@ -76,6 +80,10 @@ and attribute related naming and usage:
     7. Power history sensor for graphing each SA available channel in Apex Charts (Lovelace sample code 
        included as <SA-apex-charts.yaml> - unfortunately technically limited by HA to 2h20m.  
        
+NEW 8. Power history sensor solar analytics advanced loads broken down by imported and generated. 
+       (Lovelace sample code included as <example-apex-chart-card-solar_analytics_adv-load-imp-gen-code.yaml>
+       - also limited by HA to 2h20m.
+       
 HA Energy Dashboard set-up requires the manual assignment of "Grid consumption", "Return to grid", "Solar 
 production", and "Battery Systems" via the HA Energy configuration page. The individual energy channels (e.g. 
 load_ev_charger, load_air_conditioner, load_stove) can also be added to the HA Energy Dashboard as "Monitor 
@@ -90,7 +98,7 @@ https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-En
 https://github.com/PeterH24x7/-Solar-Analytics-integration-for-Home-Assistant-Energy-monitoring/blob/main/example-energy-dashboard-view.jpg
 
 Set-up and updates from previous releases involve the installation of a stand-alone file listed as a package 
-in the configuration.yaml file - see the <solar_analytics.yaml> code header text for instructions. To 
+in the configuration.yaml file - see the <solar_analytics....yaml> code header text for instructions. To 
 upgrade from a previous version, please read the instructions also in the code header text.
 
 This integration draws on the API get calls defined in the Solar Analytics public open API definition. It 
