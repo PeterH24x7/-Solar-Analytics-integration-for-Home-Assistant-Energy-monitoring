@@ -80,7 +80,7 @@ and attribute related naming and usage:
     7. Power history sensor for graphing each SA available channel in Apex Charts (Lovelace sample code 
        included as <SA-apex-charts.yaml> - unfortunately technically limited by HA to 2h20m.  
        
-NEW 8. Power history sensor solar analytics advanced loads broken down by imported and generated. 
+    8. Power history sensor solar analytics advanced loads broken down by imported and generated. 
        (Lovelace sample code included as <example-apex-chart-card-solar_analytics_adv-load-imp-gen-code.yaml>
        - also limited by HA to 2h20m.
        
