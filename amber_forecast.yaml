@@ -1,5 +1,5 @@
-# ----------------------------------------------------------------------------- 
-# >>> RELEASE 10 FINAL - <<< AMBER FORECAST
+# -----------------------------------------------------------------------------
+# >>> RELEASE 11 FINAL - <<< AMBER FORECAST
 #
 # AMBER extras integration for Home Assistant Energy Management. 
 # Requires HA Amber Electric Integration to be installed.
@@ -8,7 +8,7 @@
 #
 # Created: 9-Feb-2023
 #
-# Last updated: 24-May-26
+# Last updated: 21-Jul-26 as Release 11 - see update notes below.
 #
 # Updates: 
 #   2-Jun-23  - improved error checking for when nem_date is not defined.
@@ -18,6 +18,7 @@
 #             - Added safer datetime handling for nem_date parsing
 #             - Prevented transient 'unknown/unavailable' churn during startup/reload
 #             - Ensured attribute arrays are only rebuilt when valid dat
+#   21-Jul-26 - No changes.
 #
 # Creates a new "amber_forecast" sensor which contains the curent time and 24 hours 
 # future time in 30 minute increments, the general forecast prices and the feed-in 
