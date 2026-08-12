@@ -1,4 +1,4 @@
-title: Power Flow with Battery
+title: Power Flow with Battery 
 type: custom:power-flow-card-plus 
 entities:
   battery:
