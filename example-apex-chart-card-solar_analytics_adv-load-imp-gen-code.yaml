@@ -1,0 +1,201 @@
+type: custom:apexcharts-card
+graph_span: 140m
+show:
+  last_updated: true
+now:
+  show: false
+  label: now
+span:
+  start: minute
+  offset: "-145m"
+header:
+  show: true
+  title: Power by load (5min av. kW) - last 2h20m
+  show_states: false
+  colorize_states: true
+apex_config:
+  annotations:
+    yaxis:
+      - "y": 0
+        borderColor: black
+        borderWidth: 2
+        strokeDashArray: 0
+  chart:
+    height: 480px
+all_series_config:
+  unit: kW
+series:
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: Consumed
+    color: brown
+    type: line
+    float_precision: 2
+    stroke_width: 3
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_consumed[index]];
+      })
+    show:
+      legend_value: false
+      extremas: true
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: Generated
+    color: yellow
+    type: line
+    float_precision: 2
+    stroke_width: 3
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_generated_neg[index]];
+      })
+    show:
+      legend_value: false
+      extremas: true
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: Import-Export
+    color: grey
+    float_precision: 2
+    stroke_width: 3
+    stroke_dash: 6
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_imported_exported[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: EV-i
+    color: orange
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_ev_charger_imported[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: EV-g
+    color: orange
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_ev_charger_generated[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: AC-i
+    color: red
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_air_conditioner_imported[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: AC-g
+    color: red
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_air_conditioner_generated[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: HW-i
+    color: blue
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_hot_water_imported[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: HW-g
+    color: blue
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_hot_water_generated[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: St-i
+    color: purple
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_stove_imported[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+  - entity: sensor.sa_todays_energy_history_imported_generated
+    name: St-g (kW)
+    color: purple
+    opacity: 0.5
+    type: area
+    float_precision: 2
+    stroke_width: 0
+    data_generator: |
+      return entity.attributes.times.map((time, index) => {
+        return [new Date(time).getTime(), entity.attributes.energy_load_stove_generated[index]];
+      })
+    show:
+      legend_value: false
+      extremas: false
+    yaxis_id: left
+yaxis:
+  - id: left
+    decimals: 0
+    min: ~-2
+    max: ~2
+    apex_config:
+      stepsize: 2
+      title:
+        text: Power kW
+        style:
+          color: grey
+    align_to: 1
