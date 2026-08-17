@@ -5,8 +5,8 @@ Release 11 adds resilient token, 5min, live and hourly data recovery from outage
 with retries, delayed publication and startup/reload protection. Includes recovery 
 diagnostics for retries, stale data and unavailability.
 Also adds imported and generated history sensors for major loads including EV 
-Charger, Air Conditioner, Hot Water and Stove (solar_analytics_advanced.yaml).
-See example - example-apex-chart-card-solar_analytics_adv-load-imp-gen.jpg.
+Charger, Air Conditioner, Hot Water and Stove (solar_analytics_advanced.yaml only).
+See - example-apex-chart-card-solar_analytics_adv-load-imp-gen.jpg.
 
 
 ================================================================ 
