@@ -4698,7 +4698,7 @@ template:
         unit_of_measurement: "Wh"
         icon: mdi:home-lightning-bolt-outline
         device_class: "energy"
-        state_class: "total"
+        state_class: "total_increasing"
         state: >-
           {%- set meter_reset = states('sensor.sa_data_by_5min_meter_reset') == 'True' -%}
           {%- set consumed = states('sensor.sa_data_by_5min_energy_consumed_total')|float(none) -%}
