@@ -5085,8 +5085,14 @@ template:
             {%- set new_val = import_raw|float(0.0) - export_raw|float(0.0) -%}
             {{- new_val if new_val != old|float(0.0) else this.state|float(0.0) -}}
           {%- else -%}
-            {{- old -}}
+            {{- old|float(0.0) -}}
           {%- endif -%}
+        last_reset: >-
+          {%- set cost_reset = state_attr('sensor.sa_todays_energy_imported_cost', 'last_reset') -%}
+          {%- set prior = this.attributes.get('last_reset') -%}
+          {{- cost_reset if cost_reset is not none else (prior if prior is not none else '2026-01-01T00:00:00+00:00') -}}
+        availability: >-
+          {{- states('sensor.sa_todays_energy_imported_cost') not in ['unknown', 'unavailable', 'none', ''] -}}
         attributes:
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
 
