@@ -2841,11 +2841,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_consumed')|float(none) -%}
           {%- set old = this.state|float(none) -%}
-          {%- if new is number and old is number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+            {%- if old is not number -%}
+              {{- new_val -}}
+            {%- elif (new_val - old)|abs > 0.0001 -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state -}}
+            {%- endif -%}
+          {%- elif old is number -%}
+            {{- this.state -}}
           {%- else -%}
-            {{- old -}}
+            {{- 0.0 -}}
           {%- endif -%}
         attributes:
           time_stamp: >-
@@ -2867,11 +2875,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_generated')|float(none) -%}
           {%- set old = this.state|float(none) -%}
-          {%- if new is number and old is number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+            {%- if old is not number -%}
+              {{- new_val -}}
+            {%- elif (new_val - old)|abs > 0.0001 -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state -}}
+            {%- endif -%}
+          {%- elif old is number -%}
+            {{- this.state -}}
           {%- else -%}
-            {{- old -}}
+            {{- 0.0 -}}
           {%- endif -%}
         attributes:
           time_stamp: >-
@@ -2893,11 +2909,19 @@ template:
         state: >-
           {%- set new = states('sensor.sa_live_site_data_imported_exported')|float(none) -%}
           {%- set old = this.state|float(none) -%}
-          {%- if new is number and old is number -%}
+          {%- if new is number -%}
             {%- set new_val = new|float(0.0) -%}
-            {{- new_val if (new_val - old)|abs > 0.0001 else this.state|float(0.0) -}}
+            {%- if old is not number -%}
+              {{- new_val -}}
+            {%- elif (new_val - old)|abs > 0.0001 -%}
+              {{- new_val -}}
+            {%- else -%}
+              {{- this.state -}}
+            {%- endif -%}
+          {%- elif old is number -%}
+            {{- this.state -}}
           {%- else -%}
-            {{- old -}}
+            {{- 0.0 -}}
           {%- endif -%}
         attributes:
           time_stamp: >-
