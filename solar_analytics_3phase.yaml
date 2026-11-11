@@ -3026,7 +3026,6 @@ template:
             0.0
           {%- endif -%}
         attributes:
-          state_class: "measurement"
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         availability: >-
           {{- states('sensor.sa_data_by_5min_imported_total')|float(0.0) > 0 -}}
@@ -3065,7 +3064,6 @@ template:
             0.0
           {%- endif -%}
         attributes:
-          state_class: "measurement"
           time_stamp: "{{- states('sensor.sa_data_by_5min_time_stamp_cached') -}}"
         availability: >-
           {{- states('sensor.sa_data_by_5min_exported_total')|float(0.0) > 0 -}}
